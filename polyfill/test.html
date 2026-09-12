@@ -1,0 +1,224 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>link attribute polyfill: tests</title>
+<script src="link-attribute.js"></script>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+
+  function test(name, body) {
+    document.getElementById('fixture')?.remove();
+    try {
+      body();
+      log.textContent += `PASS  ${name}\n`;
+    } catch (error) {
+      failed++;
+      log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+    }
+  }
+
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+
+  function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    return (id) => document.getElementById(id);
+  }
+
+  const values = (...controls) => controls.map((control) => control.value);
+  const focusedId = () => document.activeElement.id;
+  const caret = () => document.activeElement.selectionStart;
+
+  function focusAt(control, position) {
+    control.focus();
+    control.setSelectionRange(position, position);
+  }
+
+  // Stand-ins for real user input. Synthetic events have no default action, so when the polyfill
+  // doesn't take over, these helpers do what the browser would, including enforcing maxlength.
+  function typeText(text) {
+    for (const data of text) {
+      const control = document.activeElement;
+      const init = { inputType: 'insertText', data, bubbles: true, cancelable: true, composed: true };
+      if (!control.dispatchEvent(new InputEvent('beforeinput', init))) continue;
+      const { selectionStart: start, selectionEnd: end } = control;
+      if (control.maxLength >= 0 && control.value.length - (end - start) + data.length > control.maxLength) continue;
+      control.setRangeText(data, start, end, 'end');
+      control.dispatchEvent(new InputEvent('input', { ...init, cancelable: false }));
+    }
+  }
+
+  function paste(text) {
+    const control = document.activeElement;
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData('text/plain', text);
+    const init = { inputType: 'insertFromPaste', dataTransfer, bubbles: true, cancelable: true, composed: true };
+    if (!control.dispatchEvent(new InputEvent('beforeinput', init))) return;
+    control.setRangeText(text, control.selectionStart, control.selectionEnd, 'end');
+    control.dispatchEvent(new InputEvent('input', { ...init, cancelable: false }));
+  }
+
+  const press = (key) =>
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true }));
+
+  const PHONE = `
+    <form id="form">
+      <input type="tel" id="area" name="phone" maxlength="3" link="office">
+      <input type="tel" id="office" name="phone" maxlength="3" link="line">
+      <input type="tel" id="line" name="phone" maxlength="4">
+    </form>`;
+
+  test('linkElement reflects the link attribute', () => {
+    const $ = fixture(PHONE);
+    assertEqual($('area').linkElement === $('office'), true, 'getter');
+    $('area').linkElement = $('line');
+    assertEqual([$('area').getAttribute('link'), $('area').linkElement === $('line')], ['', true], 'setter');
+    $('area').linkElement = null;
+    assertEqual($('area').hasAttribute('link'), false, 'setting null removes the attribute');
+  });
+
+  test('typing fills each control and advances focus', () => {
+    const $ = fixture(PHONE);
+    $('area').focus();
+    typeText('5551234567');
+    assertEqual(values($('area'), $('office'), $('line')), ['555', '123', '4567'], 'values');
+    assertEqual(focusedId(), 'line', 'focus');
+  });
+
+  test('with automatic advance off, typing flows through full controls', () => {
+    document.documentElement.dataset.linkAutoAdvance = 'off';
+    try {
+      const $ = fixture(PHONE);
+      $('area').focus();
+      typeText('5551234567');
+      assertEqual(values($('area'), $('office'), $('line')), ['555', '123', '4567'], 'values');
+      assertEqual(focusedId(), 'line', 'focus');
+    } finally {
+      delete document.documentElement.dataset.linkAutoAdvance;
+    }
+  });
+
+  test('every row of the spec\'s distribution example table', () => {
+    const $ = fixture(PHONE);
+    const row = (label, expectedValues, expectedFocus, expectedCaret) => {
+      assertEqual(values($('area'), $('office'), $('line')), expectedValues, `${label}: values`);
+      assertEqual([focusedId(), caret()], [expectedFocus, expectedCaret], `${label}: focus and caret`);
+    };
+
+    $('area').focus();
+    typeText('555');
+    row('type 555', ['555', '', ''], 'office', 0);
+    typeText('123');
+    row('type 123', ['555', '123', ''], 'line', 0);
+    press('Backspace');
+    row('Backspace in empty lineNumber', ['555', '12', ''], 'office', 2);
+    focusAt($('area'), 3);
+    typeText('9');
+    row('type 9 at the end of areaCode', ['555', '912', ''], 'office', 1);
+    typeText('8');
+    row('type 8', ['555', '982', ''], 'office', 2);
+    $('area').focus();
+    $('area').select();
+    paste('5551234567');
+    row('paste over a selected areaCode', ['555', '123', '4567'], 'line', 4);
+    focusAt($('area'), 0);
+    paste('8005550199');
+    row('paste at the start of areaCode', ['800', '555', '0199'], 'line', 4);
+  });
+
+  test('distribution stops at password and select boundaries', () => {
+    const $ = fixture(`
+      <input id="a" maxlength="2" link="b"><input id="b" type="password" maxlength="2">
+      <input id="x" maxlength="2" link="y"><input id="y" maxlength="2" link="s">
+      <select id="s"><option>1</option></select>`);
+    $('a').focus();
+    paste('123456');
+    assertEqual(values($('a'), $('b')), ['12', ''], 'password boundary');
+    $('x').focus();
+    paste('123456');
+    assertEqual(values($('x'), $('y')), ['12', '34'], 'select boundary');
+    assertEqual(focusedId(), 's', 'the full control still advances to the select');
+  });
+
+  test('surrogate pairs are never split', () => {
+    const $ = fixture('<input id="a" maxlength="3" link="b"><input id="b" maxlength="4">');
+    $('a').focus();
+    paste('😀😀');
+    assertEqual(values($('a'), $('b')), ['😀', '😀'], 'values');
+  });
+
+  test('arrow keys cross control boundaries', () => {
+    const $ = fixture(PHONE);
+    $('area').value = '555';
+    $('office').value = '123';
+    focusAt($('office'), 0);
+    press('ArrowLeft');
+    assertEqual([focusedId(), caret()], ['area', 3], 'left from the start');
+    press('ArrowRight');
+    assertEqual([focusedId(), caret()], ['office', 0], 'right from the end');
+  });
+
+  test('picking a select option advances; arrow keys on a closed select do not', () => {
+    const $ = fixture('<select id="s" link="t"><option>1</option><option>2</option></select><input id="t">');
+    $('s').focus();
+    $('s').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+    $('s').value = '2';
+    $('s').dispatchEvent(new Event('change', { bubbles: true }));
+    assertEqual(focusedId(), 't', 'picked with a pointer');
+    $('s').focus();
+    press('ArrowUp');
+    $('s').value = '1';
+    $('s').dispatchEvent(new Event('change', { bubbles: true }));
+    assertEqual(focusedId(), 's', 'changed with an arrow key');
+  });
+
+  test('linked controls that share a name submit one entry, in link order', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input name="before" value="b">
+        <input name="phone" id="line" maxlength="4" value="4567">
+        <select name="phone" link="area"><option value="+1" selected>+1</option></select>
+        <input name="phone" id="area" maxlength="3" link="office" value="555">
+        <input name="phone" id="office" maxlength="3" link="line" value="123">
+        <input name="after" value="a">
+      </form>`);
+    assertEqual([...new FormData($('form'))], [['before', 'b'], ['phone', '+15551234567'], ['after', 'a']], 'entries');
+  });
+
+  test('names decide joining, and disabled members contribute nothing', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input name="cc" maxlength="2" link="c2" value="41">
+        <input name="cc" id="c2" maxlength="2" link="m" value="11">
+        <select name="exp" id="m" link="y"><option value="12" selected>12</option></select>
+        <select name="exp" id="y"><option value="30" selected>30</option></select>
+        <input name="x" link="x2" value="A">
+        <input name="x" id="x2" link="x3" value="B" disabled>
+        <input name="x" id="x3" value="C">
+      </form>`);
+    assertEqual([...new FormData($('form'))], [['cc', '4111'], ['exp', '1230'], ['x', 'AC']], 'entries');
+  });
+
+  test('cycles, duplicate targets, and non-linkable targets are ignored', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input name="cycle" id="c1" link="c2" value="1"><input name="cycle" id="c2" link="c1" value="2">
+        <input name="dup" id="p" link="z" value="P"><input name="dup" id="q" link="z" value="Q">
+        <input name="dup" id="z" value="Z">
+        <input name="t" link="notes" value="I"><textarea name="t" id="notes">T</textarea>
+      </form>`);
+    assertEqual([...new FormData($('form'))],
+      [['cycle', '1'], ['cycle', '2'], ['dup', 'PZ'], ['dup', 'Q'], ['t', 'I'], ['t', 'T']], 'entries');
+  });
+
+  log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+  document.title = failed ? 'FAIL' : 'PASS';
+</script>

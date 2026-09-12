@@ -1,0 +1,850 @@
+<pre class=metadata>
+Title: Linked Form Controls
+Shortname: linked-form-controls
+Level: none
+Status: LD
+ED: https://arronei.github.io/HTML-Additions/spec/
+Repository: arronei/HTML-Additions
+Editor: Arron Eicholz
+Abstract: This specification extends HTML with a <code>link</code> content attribute for text-entry
+    <{input}> elements and for <{select}> elements. The attribute names the control that continues
+    the current one. The user agent moves focus through the resulting chain of controls as each one
+    fills up, and carries typing, deletion, caret movement, pasting, and autofill across the controls.
+    When linked controls share a name, their values are submitted together as one form entry.
+    Segmented fields such as telephone numbers and one-time codes then work without script.
+Markup Shorthands: markdown yes, css no
+Complain About: accidental-2119 yes, missing-example-ids yes
+Assume Explicit For: yes
+</pre>
+
+<pre class=link-defaults>
+spec:html; type:element; text:input
+spec:html; type:element; text:select
+spec:html; type:element; text:datalist
+spec:html; type:element-attr; for:input; text:type
+spec:html; type:element-attr; for:select; text:multiple
+spec:html; type:element; text:link
+</pre>
+
+<pre class=anchors>
+spec: html; urlPrefix: https://html.spec.whatwg.org/multipage/
+    urlPrefix: form-control-infrastructure.html
+        type: dfn
+            text: maximum allowed value length; url: #maximum-allowed-value-length
+            text: mutable; url: #concept-fe-mutable
+            text: dirty value flag; url: #concept-fe-dirty
+            text: user validity; url: #user-validity
+            text: value; for: form control; url: #concept-fe-value
+            text: disabled; for: form control; url: #concept-fe-disabled
+            text: selection; for: text control; url: #concept-textarea/input-selection
+            text: text entry cursor position; url: #concept-textarea/input-cursor
+            text: set the selection range; url: #set-the-selection-range
+    urlPrefix: form-elements.html
+        type: dfn
+            text: list of options; url: #concept-select-option-list
+            text: selectedness; url: #concept-option-selectedness
+            text: value; for: option; url: #concept-option-value
+            text: disabled; for: option; url: #concept-option-disabled
+            text: send select update notifications; url: #send-select-update-notifications
+    urlPrefix: interaction.html
+        type: dfn
+            text: focusable; url: #focusable
+            text: focused; url: #focused
+            text: sequential focus navigation; url: #sequential-focus-navigation
+</pre>
+
+
+<h2 id=intro>Introduction</h2>
+
+*This section is non-normative.*
+
+Many forms collect a single value through several small text fields: a telephone number split
+into area code, central office code, and line number; a six-digit verification code with one box
+per digit; a card number in groups of four. Every one of these forms currently needs script to:
+
+* move focus to the next field once the current one is full;
+* move back to the previous field when the user presses Backspace at the start of a field;
+* let the arrow keys move the caret from one field into the next;
+* spread pasted or autofilled text across the fields instead of cutting it off at the first
+    field's <a href="https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength"><code>maxlength</code></a>; and
+* put the pieces back together for the server, usually by copying them into a hidden field.
+
+These scripts are rewritten for countless sites, behave slightly differently on each one, and
+often break input methods, autofill, and assistive technology.
+
+The <{input/link}> attribute lets authors declare the relationship instead, and leaves the behavior
+to the user agent.
+
+<div class=example id=example-intro-phone>
+    A form asks for a North American telephone number in three parts:
+
+    <xmp highlight=html>
+    <form action="/register">
+      <fieldset>
+        <legend>Phone number</legend>
+        <input type="tel" id="areaCode" name="phoneNumber" maxlength="3"
+               link="centralOfficeCode" autocomplete="tel-area-code" aria-label="Area code">
+        <input type="tel" id="centralOfficeCode" name="phoneNumber" maxlength="3"
+               link="lineNumber" autocomplete="tel-local-prefix" aria-label="Central office code">
+        <input type="tel" id="lineNumber" name="phoneNumber" maxlength="4"
+               autocomplete="tel-local-suffix" aria-label="Line number">
+      </fieldset>
+      <button>Register</button>
+    </form>
+    </xmp>
+
+    The user types <kbd>5551234567</kbd> into the first field. After the third digit, focus moves to
+    <code>centralOfficeCode</code>; after the sixth, it moves to <code>lineNumber</code>. Submitting the
+    form sends one entry:
+
+    <pre>phoneNumber=5551234567</pre>
+
+    Without the <{input/link}> attributes, the same form would send three entries:
+    <code>phoneNumber=555&amp;phoneNumber=123&amp;phoneNumber=4567</code>.
+</div>
+
+Two attributes do two separate jobs:
+
+* <{input/link}> decides where focus and text go next.
+* <{input/name}> decides what is submitted together: linked controls that share a name are
+    submitted as one entry, with values concatenated in link order.
+
+User agents that don't support this specification still show separate, working fields, and
+submit each field as its own entry.
+
+
+<h2 id=link-attribute>The <code>link</code> attribute</h2>
+
+<h3 id=linkable-elements>Linkable elements</h3>
+
+A <dfn export>linkable element</dfn> is either:
+
+* an <{input}> element whose <{input/type}> attribute is in the
+    <a element-state for=input>Text</a>, <a element-state for=input>Search</a>,
+    <a element-state for=input>Telephone</a>, or <a element-state for=input>Password</a> state; or
+* a <{select}> element that does not have a <{select/multiple}> attribute.
+
+Note: Controls that aren't used to enter a piece of a larger value, such as checkboxes and radio
+buttons, are not linkable. <{select}> elements with a <{select/multiple}> attribute are excluded
+because they can contribute more than one value.
+
+<h3 id=the-link-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for="input, select">link</dfn> content attribute identifies the control that
+comes next in a sequence of controls that together hold a single value. It can be specified on
+<{input}> and <{select}> elements.
+
+If present, the attribute's value must be the [=Element/ID=] of a [=linkable element=] in the same
+[=tree=] as the element, other than the element itself. The attribute must only be specified on
+linkable elements. On any other <{input}> or <{select}> element, the attribute does not apply and
+has no effect.
+
+Authors must not specify <{input/link}> attributes such that two elements have the same
+[=link target=], or such that following link targets from an element eventually leads back to that
+element.
+
+<h3 id=the-link-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+interface mixin LinkedControlAttributes {
+  [CEReactions, Reflect="link"] attribute Element? linkElement;
+};
+HTMLInputElement includes LinkedControlAttributes;
+HTMLSelectElement includes LinkedControlAttributes;
+</xmp>
+
+The <dfn attribute for=LinkedControlAttributes>linkElement</dfn> IDL attribute must
+[=reflect=] the <{input/link}> content attribute.
+
+Note: Like {{HTMLButtonElement/commandForElement}}, {{LinkedControlAttributes/linkElement}} returns
+the element that the attribute refers to, and can be set to an element that has no ID. Setting it
+sets the content attribute to the empty string.
+
+<div class=example id=example-idl>
+    <xmp highlight=js>
+    const [area, prefix, line] = form.querySelectorAll('input[name="phoneNumber"]');
+
+    // Build the chain from script. None of these elements need an id.
+    area.linkElement = prefix;
+    prefix.linkElement = line;
+
+    area.linkElement === prefix;               // true
+    new FormData(form).get("phoneNumber");     // e.g. "5551234567"
+
+    // Feature detection.
+    const supported = "linkElement" in HTMLInputElement.prototype;
+    </xmp>
+</div>
+
+<h3 id=link-chains>Link targets and link chains</h3>
+
+<div algorithm>
+    The <dfn export>link target</dfn> of an element |element| is the result of these steps:
+
+    1. If |element| is not a [=linkable element=], then return null.
+
+    1. Let |target| be the result of running |element|'s
+        <a spec=html for=Element lt="get the attr-associated element">get the
+        <code>link</code>-associated element</a>.
+
+    1. If any of the following are true, then return null:
+        * |target| is null;
+        * |target| is |element|;
+        * |target| is not a [=linkable element=]; or
+        * |target|'s [=tree/root=] is not |element|'s [=tree/root=].
+
+    1. Return |target|.
+</div>
+
+<div algorithm>
+    The <dfn>link source</dfn> of an element |element| is the first [=linkable element=], in
+    [=tree order=], among the [=tree/inclusive descendants=] of |element|'s [=tree/root=], whose
+    [=link target=] is |element|. If there is no such element, the link source is null.
+</div>
+
+Note: When more than one element names the same link target, only the first of them in tree
+order is linked to it. The others act as if they had no <{input/link}> attribute.
+
+<div algorithm="next and previous linked controls">
+    The <dfn>tentative next control</dfn> of an element |element| is |element|'s [=link target=],
+    if that is not null and its [=link source=] is |element|. Otherwise, it is null.
+
+    An element |element| is <dfn>in a link cycle</dfn> if, starting with |current| set to
+    |element|'s [=tentative next control=] and then repeatedly setting |current| to |current|'s
+    tentative next control, |current| eventually becomes |element|.
+
+    Note: An element is the tentative next control of at most one other element, so this process
+    always either comes back to |element| or reaches null.
+
+    The <dfn export>next linked control</dfn> of an element |element| is null if |element| is
+    [=in a link cycle=], and |element|'s [=tentative next control=] otherwise.
+
+    The <dfn export>previous linked control</dfn> of an element |element| is null if |element| is
+    [=in a link cycle=], and |element|'s [=link source=] otherwise.
+</div>
+
+Note: Controls that form a cycle aren't linked at all. That way, an authoring mistake gives
+separate, ordinary controls instead of a chain with no clear start.
+
+<div algorithm>
+    The <dfn export>link chain</dfn> of a [=linkable element=] |element| is the [=list=] returned by
+    these steps:
+
+    1. Let |head| be |element|.
+
+    1. [=iteration/While=] |head|'s [=previous linked control=] is not null, set |head| to |head|'s
+        previous linked control.
+
+    1. Let |chain| be « |head| ».
+
+    1. Let |current| be |head|'s [=next linked control=].
+
+    1. [=iteration/While=] |current| is not null:
+
+        1. [=list/Append=] |current| to |chain|.
+
+        1. Set |current| to |current|'s [=next linked control=].
+
+    1. Return |chain|.
+</div>
+
+A <dfn export>linked control</dfn> is a [=linkable element=] whose [=link chain=]'s [=list/size=]
+is greater than 1. A <dfn export>linked text control</dfn> is a [=linked control=] that is an
+<{input}> element.
+
+A [=linked control=] |control| is <dfn for="linked control">available</dfn> if |control| is
+[=focusable=] and, if |control| is an <{input}> element, |control| is [=mutable=].
+
+<div algorithm="next and previous available linked controls">
+    The <dfn>next available linked control</dfn> of a [=linked control=] |control| is the result of
+    these steps:
+
+    1. Let |current| be |control|'s [=next linked control=].
+
+    1. [=iteration/While=] |current| is not null and |current| is not
+        [=linked control/available=], set |current| to |current|'s [=next linked control=].
+
+    1. Return |current|.
+
+    The <dfn>previous available linked control</dfn> of a [=linked control=] is found the same way,
+    using [=previous linked controls=] instead of [=next linked controls=].
+</div>
+
+Note: Skipping controls that aren't available means a disabled, read-only, or hidden piece of a
+value, such as a fixed country code, doesn't stop the user from moving through the rest.
+
+<div class=example id=example-nonconforming>
+    The following markup is non-conforming. User agents handle it as described in the comments.
+
+    <xmp highlight=html>
+    <!-- A cycle: neither control is linked. -->
+    <input id="a" link="b" maxlength="2">
+    <input id="b" link="a" maxlength="2">
+
+    <!-- Two controls link to "z". Only "p", the first in tree order, is linked to it. -->
+    <input id="p" link="z" maxlength="3">
+    <input id="q" link="z" maxlength="3">
+    <input id="z" maxlength="3">
+
+    <!-- <textarea> is not a linkable element, so the link attribute is ignored. -->
+    <input link="notes" maxlength="10">
+    <textarea id="notes"></textarea>
+    </xmp>
+</div>
+
+
+<h2 id=user-interaction>User interaction</h2>
+
+The requirements in this section make a [=link chain=] behave, for editing, like one field divided
+into segments. They apply only to actions the user takes, not to changes made by script (for
+example, setting {{HTMLInputElement/value}} or calling
+{{HTMLInputElement/setSelectionRange()}}).
+
+<h3 id=advancing-focus>Advancing focus</h3>
+
+<div algorithm>
+    To <dfn>advance focus</dfn> from a [=linked control=] |control|:
+
+    1. If the user has turned off automatic focus advancement (see [[#a11y]]), then return.
+
+    1. Let |next| be |control|'s [=next available linked control=].
+
+    1. If |next| is null, then return.
+
+    1. Run the [=focusing steps=] for |next|.
+
+    1. If |next| is an <{input}> element and is [=focused=], then [=set the selection range=] of
+        |next| with 0 and the [=string/length=] of |next|'s [=form control/value=].
+</div>
+
+Note: Selecting the next control's contents means typing replaces whatever it already holds, as it
+does when the user tabs into a text field on most platforms.
+
+<div algorithm>
+    To <dfn>check for automatic advance</dfn> for a [=linked text control=] |control|:
+
+    1. If |control| is not [=focused=], then return.
+
+    1. If |control| has no [=maximum allowed value length=], then return.
+
+    1. If the [=string/length=] of |control|'s [=form control/value=] is less than |control|'s
+        [=maximum allowed value length=], then return.
+
+    1. If |control|'s [=text control/selection=] is not collapsed, or the
+        [=text entry cursor position=] is not at the end of |control|'s
+        [=form control/value=], then return.
+
+    1. [=Advance focus=] from |control|.
+</div>
+
+Whenever the user agent queues a task to fire an <code>input</code> event at a [=linked text control=]
+|control| because the user inserted text into it, it must then [=queue an element task=] on the
+[=user interaction task source=] given |control| to [=check for automatic advance=] for |control|.
+Inserting text includes typing, committing an input method composition, pasting, dropping, and
+accepting a replacement suggestion, such as a spelling correction. It does not include autofill,
+updates to an input method composition that is still in progress, or deleting text.
+
+Note: The check runs after the <code>input</code> event has been dispatched. If an event listener
+changes the control's value or moves focus, the check sees the result.
+
+When the user picks an option of a [=linked control=] |control| that is a <{select}> element
+from the element's [=select/drop-down box=], the user agent must, after the task queued by
+[=send select update notifications=] has run, [=queue an element task=] on the
+[=user interaction task source=] given |control| to run these steps:
+
+1. If |control| is not [=focused=], then return.
+
+1. [=Advance focus=] from |control|.
+
+The user agent must not [=advance focus=] from a <{select}> element when the user changes its
+selected option without picking it from the drop-down box. This covers using the arrow keys while
+the drop-down box is closed, as some platforms allow, and a <{select}> element that is being
+rendered as a [=select/list box=].
+
+<h3 id=distributing-text>Distributing text</h3>
+
+When the user inserts text into a [=linked text control=] |control|, and the insertion was not
+canceled (for example, by canceling its <code>beforeinput</code> event [[UIEVENTS]]), the user agent
+must run [=distribute text=] given |control|, the inserted text, and the start and end offsets of
+the part of |control|'s [=form control/value=] that the insertion replaces. The inserted text is
+taken after the processing the user agent normally applies to text inserted into |control|, such as
+removing line breaks. The replaced part is the [=text control/selection=], or an empty range at the
+[=text entry cursor position=] if the selection is collapsed. If [=distribute text=] returns false,
+the user agent must insert the text as it normally would. Otherwise, the insertion has been fully
+handled.
+
+When the user agent autofills a [=linked text control=] |control| with a string that is longer
+than |control|'s [=maximum allowed value length=], it must run [=distribute text=] given |control|,
+the string, 0, the [=string/length=] of |control|'s [=form control/value=], and false, instead of
+truncating the string.
+
+<div algorithm>
+    To <dfn>distribute text</dfn> given a [=linked text control=] |control|, a [=string=] |text|,
+    integers |start| and |end|, and an optional boolean |move focus| (default true):
+
+    1. If |control| has no [=maximum allowed value length=], then return false.
+
+    1. Let |value| be |control|'s [=form control/value=].
+
+    1. Let |before| be the [=code unit substring=] from 0 to |start| within |value|.
+
+    1. Let |after| be the [=code unit substring=] from |end| to |value|'s [=string/length=] within
+        |value|.
+
+    1. If the sum of the [=string/lengths=] of |before|, |text|, and |after| is less than or equal to
+        |control|'s [=maximum allowed value length=], then return false.
+
+    1. Let |target| be |control|.
+
+    1. Let |prefix| be |before|, let |suffix| be |after|, and let |remaining| be |text|.
+
+    1. Let |changed| be an empty [=list=].
+
+    1. Let |last target| be |control|, and let |caret| be the [=string/length=] of |before|.
+
+    1. [=iteration/While=] true:
+
+        1. Let |room| be |target|'s [=maximum allowed value length=] minus the [=string/length=] of
+            |prefix|, or the [=string/length=] of |remaining| if |target| has no maximum allowed
+            value length. If |room| is less than 0, set |room| to 0.
+
+        1. Let |piece| be the [=code unit prefix=] of |remaining| whose [=string/length=] is the
+            smaller of |room| and the [=string/length=] of |remaining|. If |piece| ends with a
+            [=leading surrogate=] and |remaining| is longer than |piece|, remove that last
+            [=code unit=] from |piece|.
+
+        1. Set |remaining| to the [=code unit substring=] from the [=string/length=] of |piece| to the
+            [=string/length=] of |remaining| within |remaining|.
+
+        1. Let |excess| be the sum of the [=string/lengths=] of |prefix|, |piece|, and |suffix|,
+            minus |target|'s [=maximum allowed value length=]. If |target| has no maximum allowed
+            value length, or |excess| is less than 0, set |excess| to 0.
+
+        1. Let |kept| be the [=code unit substring=] from the smaller of |excess| and the
+            [=string/length=] of |suffix|, to the [=string/length=] of |suffix|, within |suffix|. If
+            |kept| starts with a [=trailing surrogate=], remove that first [=code unit=] from
+            |kept|.
+
+        1. Let |new value| be the [=string/concatenation=] of « |prefix|, |piece|, |kept| ».
+
+        1. If |new value| is not [=string/identical to=] |target|'s [=form control/value=], then:
+
+            1. Set |target|'s [=form control/value=] to |new value|, and set its
+                [=dirty value flag=] to true. The value counts as having last been changed by a user
+                edit.
+
+            1. [=list/Append=] |target| to |changed|.
+
+        1. Set |last target| to |target|, and set |caret| to the sum of the [=string/lengths=] of
+            |prefix| and |piece|.
+
+        1. If |remaining| is the empty string, then [=iteration/break=].
+
+        1. Let |next| be |target|'s [=next available linked control=].
+
+        1. If any of the following are true, then [=iteration/break=]:
+            * |next| is null;
+            * |next| is not an <{input}> element; or
+            * the <{input/type}> attribute of exactly one of |target| and |next| is in the
+                <a element-state for=input>Password</a> state.
+
+        1. Set |target| to |next|, set |prefix| to the empty string, and set |suffix| to |next|'s
+            [=form control/value=].
+
+    1. If |move focus| is true, then:
+
+        1. If |last target| is not |control|, then run the [=focusing steps=] for |last target|.
+
+        1. If |last target| is [=focused=], then [=set the selection range=] of |last target| with
+            |caret| and |caret|.
+
+    1. [=list/For each=] |changed control| of |changed|, [=queue an element task=] on the
+        [=user interaction task source=] given |changed control| to run these steps:
+
+        1. [=Fire an event=] named <code>input</code> at |changed control|, with the
+            {{Event/bubbles}} and {{Event/composed}} attributes initialized to true.
+
+        1. If |move focus| is false, or |changed control| is neither |control| nor
+            |last target|, then set |changed control|'s [=user validity=] to true and [=fire an event=] named
+            {{HTMLElement/change}} at |changed control|, with the {{Event/bubbles}} attribute
+            initialized to true.
+
+    1. Return true.
+</div>
+
+Note: Text that fits is inserted normally. When text doesn't fit, each control takes as much as it
+can hold after the insertion point. To make room, it replaces only as many of the following
+characters as it has to. Anything left over is inserted at the start of the next available linked
+text control, under the same rule. This one rule covers pasting a whole value into the first
+control, typing past the end of a full control into the next one, and typing over a full chain. Distribution
+stops at a <{select}> element, at the end of the chain, and at any boundary between a
+<a element-state for=input>Password</a> control and a control of another type. Text left over at
+that point is discarded, as it would be by <a href="https://html.spec.whatwg.org/multipage/input.html#attr-input-maxlength"><code>maxlength</code></a>.
+
+Note: The <code>input</code> events fire in link order, after focus has moved. The control that
+ends up focused, and the control the user started in, get their {{HTMLElement/change}} events in
+the usual way, when they lose focus. Controls in between, which never have focus, get their
+{{HTMLElement/change}} events straight away, as does every control changed by autofill.
+
+<div class=example id=example-distribution>
+    With the telephone number fields from <a href="#example-intro-phone">the introduction</a>:
+
+    <table class=data>
+        <thead>
+            <tr><th>User action<th><code>areaCode</code><th><code>centralOfficeCode</code><th><code>lineNumber</code><th>Focus afterward
+        <tbody>
+            <tr><td>Type <kbd>555</kbd> into the empty <code>areaCode</code><td>555<td><td><td><code>centralOfficeCode</code>, contents selected
+            <tr><td>Type <kbd>123</kbd><td>555<td>123<td><td><code>lineNumber</code>
+            <tr><td>Press <kbd>Backspace</kbd> in the empty <code>lineNumber</code><td>555<td>12<td><td><code>centralOfficeCode</code>, caret at end
+            <tr><td>Click at the end of <code>areaCode</code> and type <kbd>9</kbd><td>555<td>912<td><td><code>centralOfficeCode</code>, caret after 9
+            <tr><td>Type <kbd>8</kbd><td>555<td>982<td><td><code>centralOfficeCode</code>, caret after 8
+            <tr><td>Select all of <code>areaCode</code> and paste <kbd>5551234567</kbd><td>555<td>123<td>4567<td><code>lineNumber</code>, caret at end
+            <tr><td>Paste <kbd>8005550199</kbd> with the caret at the start of <code>areaCode</code><td>800<td>555<td>0199<td><code>lineNumber</code>, caret at end
+    </table>
+</div>
+
+<h3 id=moving-between-controls>Moving between linked text controls</h3>
+
+When the user asks to delete the content just before the [=text entry cursor position=] (for
+example, by pressing <kbd>Backspace</kbd>) in a [=linked text control=] |control| whose
+[=text control/selection=] is collapsed at the start of its [=form control/value=], and the request
+was not canceled, the user agent must run these steps instead of its usual behavior:
+
+1. Let |previous| be |control|'s [=previous available linked control=].
+
+1. If |previous| is null, then return.
+
+1. Run the [=focusing steps=] for |previous|.
+
+1. If |previous| is an <{input}> element and is [=focused=], then:
+
+    1. Let |length| be the [=string/length=] of |previous|'s [=form control/value=].
+
+    1. [=Set the selection range=] of |previous| with |length| and |length|.
+
+    1. Carry out the user's deletion request in |previous|, as if the user had made it there. This
+        includes firing the events such a deletion fires, and deleting as much text as the
+        platform's conventions say (for example, one grapheme cluster).
+
+When the user asks to move the [=text entry cursor position=] back by one position, without
+extending the selection, in a [=linked text control=] |control| whose [=text control/selection=] is
+collapsed at the start of its [=form control/value=], and the request was not canceled, the user
+agent must run these steps instead of its usual behavior. An example of such a request is the
+<kbd>←</kbd> key in a left-to-right control.
+
+1. Let |previous| be |control|'s [=previous available linked control=].
+
+1. If |previous| is null or is not an <{input}> element, then return and act as usual.
+
+1. Run the [=focusing steps=] for |previous|.
+
+1. If |previous| is [=focused=], then [=set the selection range=] of |previous| with |length| and
+    |length|, where |length| is the [=string/length=] of |previous|'s [=form control/value=].
+
+When the user asks to move the [=text entry cursor position=] forward by one position, without
+extending the selection, in a [=linked text control=] |control| whose [=text control/selection=] is
+collapsed at the end of its [=form control/value=], and the request was not canceled, the user
+agent must run these steps instead of its usual behavior. An example of such a request is the
+<kbd>→</kbd> key in a left-to-right control.
+
+1. Let |next| be |control|'s [=next available linked control=].
+
+1. If |next| is null or is not an <{input}> element, then return and act as usual.
+
+1. Run the [=focusing steps=] for |next|.
+
+1. If |next| is [=focused=], then [=set the selection range=] of |next| with 0 and 0.
+
+Note: The arrow keys never move focus into or out of a <{select}> element, because they already
+change the selected option there. Backspace can move focus back to a <{select}> element, but it
+doesn't change the selection.
+
+Note: The <code>keydown</code> event for these keys fires at the control where the user pressed the
+key, before focus moves. Canceling it stops the behavior.
+
+
+<h2 id=form-submission>Form submission</h2>
+
+<h3 id=joined-groups>Joined groups</h3>
+
+<div algorithm>
+    The <dfn export>joined group</dfn> of a [=linked control=] |control| is the [=list=] of the
+    [=list/items=] |member| of |control|'s [=link chain=], in order, for which all of the following
+    are true:
+
+    * |member| has a <{input/name}> attribute whose value is [=string/identical to=] the value of
+        |control|'s <{input/name}> attribute;
+    * |member|'s [=input/form owner=] is not null and is |control|'s [=input/form owner=];
+    * |member| is not [=form control/disabled=]; and
+    * |member| does not have a <{datalist}> element ancestor.
+</div>
+
+<div algorithm>
+    The <dfn export>joined value</dfn> of a [=joined group=] |group| is the result of these steps:
+
+    1. Let |value| be the empty string.
+
+    1. [=list/For each=] |member| of |group|:
+
+        1. If |member| is a <{select}> element, then, for each <{option}> element |option| in
+            |member|'s [=list of options=] whose [=selectedness=] is true and that is not
+            [=option/disabled=], append |option|'s [=option/value=] to |value|.
+
+        1. Otherwise, append |member|'s [=form control/value=] to |value|.
+
+    1. Return |value|.
+</div>
+
+Note: Only controls that are linked *and* share a name are joined. Controls that share a name
+without being linked, such as a group of checkboxes, still submit separate entries. Linked controls
+with different names still move focus from one to the next, but each name gets its own entry. A
+disabled member contributes nothing, but doesn't split the group.
+
+<h3 id=patch-construct-the-entry-list>Changes to constructing the entry list</h3>
+
+The algorithm to [=constructing the entry list|construct the entry list=] [[!HTML]] is changed as
+follows. Inserted text is <ins>marked like this</ins> and removed text is <del>marked like
+this</del>. Steps that don't change are summarized in brackets.
+
+<div algorithm="construct the entry list (patched)">
+    5. For each element |field| in <var ignore>controls</var>, in [=tree order=]:
+
+        1. [If any of the skip conditions are true, such as |field| being disabled, then continue.]
+
+        1. [If |field| is an Image Button, then append its coordinates and continue.]
+
+        1. [If |field| is a form-associated custom element, then perform its entry construction
+            algorithm and continue.]
+
+        1. If either the |field| element does not have a <{input/name}> attribute specified, or its
+            <{input/name}> attribute's value is the empty string, then continue.
+
+        1. Let |name| be the value of the |field| element's <{input/name}> attribute.
+
+        1. <ins>If |field| is a [=linked control=] and the [=list/size=] of |field|'s
+            [=joined group=] is greater than 1, then:</ins>
+
+            1. <ins>If |field| is not the first [=list/item=] of |field|'s [=joined group=], then
+                continue.</ins>
+
+            1. <ins>[=entry list/Create an entry=] with |name| and the [=joined value=] of |field|'s
+                [=joined group=], and append it to |entry list|.</ins>
+
+        1. <del>If</del> <ins>Otherwise, if</ins> the |field| element is a <{select}> element, then
+            for each <{option}> element in the <{select}> element's [=list of options=] whose
+            [=selectedness=] is true and that is not [=option/disabled=], [=entry list/create an
+            entry=] with |name| and the [=option/value=] of the <{option}> element, and append it to
+            |entry list|.
+
+        1. [The remaining "Otherwise, if" steps for checkboxes, radio buttons, file uploads,
+            <code>_charset_</code>, and all other controls are unchanged.]
+
+        1. [If the element has a <code>dirname</code> attribute, then append its directionality
+            entry. This step is unchanged.]
+</div>
+
+Note: The joined entry is appended when the loop reaches the group's first member *in link order*.
+Members that come later in the group are skipped, wherever they are in the tree. The
+<code>dirname</code> step still runs for the first member, so a joined group contributes at most one
+<code>dirname</code> entry.
+
+Note: {{FormData}}'s constructor and the {{HTMLElement/formdata}} event use the same algorithm.
+Scripts calling <code>new FormData(form)</code> therefore see the joined value, exactly as the
+server does.
+
+<h3 id=other-features>Interaction with other features</h3>
+
+*This section is non-normative.*
+
+: Constraint validation
+:: Each control is validated on its own. Authors can use <{input/required}>,
+    <a href="https://html.spec.whatwg.org/multipage/input.html#attr-input-minlength"><code>minlength</code></a>, and <{input/pattern}> on each segment, for example
+    <code>pattern="[0-9]{3}"</code>.
+: <code>form.elements</code>
+:: This specification doesn't change {{HTMLFormElement/elements}} or {{RadioNodeList}}. Each
+    segment remains its own control, and <code>form.elements.phoneNumber</code> is a
+    {{RadioNodeList}} of all three fields.
+: Autofill
+:: Existing autofill field names already describe common segments:
+    <{input/autocomplete/tel-area-code}>, <{input/autocomplete/tel-local-prefix}>, and
+    <{input/autocomplete/tel-local-suffix}> for telephone numbers. When a user agent fills a whole
+    value into the first segment, such as a <{input/autocomplete/one-time-code}>, [[#distributing-text]]
+    spreads it across the chain.
+: User agents without support
+:: Each segment is submitted as its own entry with the shared name, for example
+    <code>phoneNumber=555&amp;phoneNumber=123&amp;phoneNumber=4567</code>. A server that joins repeated
+    values for such names accepts submissions from both kinds of user agent.
+
+
+<h2 id=changes-to-html>Changes to the HTML Standard</h2>
+
+To integrate this specification into the HTML Standard [[!HTML]], make these changes:
+
+1. In <a href="https://html.spec.whatwg.org/multipage/input.html#the-input-element">the
+    <code>input</code> element</a>:
+    * Add <{input/link}> to the element's content attributes.
+    * Add <code>HTMLInputElement includes LinkedControlAttributes;</code> to the DOM interface.
+    * Add a <{input/link}> row to the table that summarizes which content attributes apply to each
+        <{input/type}> state. Mark it "Yes" for the Text, Search, Telephone, and Password states, and
+        not applicable for every other state.
+    * In the "Bookkeeping details" of the Text and Search, Telephone, and Password states, add
+        <{input/link}> to the attributes that apply, and {{LinkedControlAttributes/linkElement}} to
+        the IDL attributes that apply. In every other state, add <{input/link}> to the content
+        attributes that must not be specified.
+1. In <a href="https://html.spec.whatwg.org/multipage/form-elements.html#the-select-element">the
+    <code>select</code> element</a>, add <{select/link}> to the element's content attributes, and
+    <code>HTMLSelectElement includes LinkedControlAttributes;</code> to the DOM interface.
+1. Apply the change in [[#patch-construct-the-entry-list]].
+1. Add the definitions in [[#link-attribute]], [[#user-interaction]], and [[#joined-groups]] as a new
+    subsection of "Attributes common to form controls".
+1. In the index of element attributes, add a row: attribute <code>link</code>; elements
+    <code>input</code>, <code>select</code>; description "Next control in a sequence of linked
+    controls"; value "ID".
+
+
+<h2 id=a11y>Accessibility considerations</h2>
+
+Moving focus while the user is typing is a change of context under
+<a href="https://www.w3.org/TR/WCAG22/#on-input">Success Criterion 3.2.2 On Input</a> [[WCAG22]],
+unless the user is told about the behavior before using the controls. Some users,
+including many screen reader and screen magnifier users, find automatic focus movement disorienting.
+
+* User agents should give users a way to turn off automatic focus advancement. When it is off,
+    [=advance focus=] does nothing. Users can still move between controls by typing past the end
+    of a full control ([[#distributing-text]]), with the arrow keys and Backspace
+    ([[#moving-between-controls]]), or with [=sequential focus navigation=].
+* Authors should group linked controls, for example with a <{fieldset}> and <{legend}>. They should
+    give each control its own accessible name, and say in the group's label or nearby instructions
+    that focus moves automatically.
+* User agents should expose link chains to accessibility APIs, so that assistive technology can
+    tell users where a control sits in its chain (for example, "area code, 1 of 3").
+
+Issue: Define how link chains map to platform accessibility APIs in [[HTML-AAM-1.0]]. One option is a
+"flows to" relationship, as for <code>aria-flowto</code> [[WAI-ARIA-1.2]], together with the position
+in the chain and the chain's size.
+
+Because distribution keeps pasting and autofill working, users of voice control, switch access, and
+password managers can supply a whole value at once instead of entering it one segment at a time.
+
+
+<h2 id=security-privacy>Security and privacy considerations</h2>
+
+* This specification exposes no new information. A joined entry contains exactly the values that
+    its controls would otherwise submit separately.
+* A [=link target=] must be in the same [=tree=] as the element that names it. Links therefore
+    can't move focus or text into another document, such as a cross-origin <code>iframe</code>, or
+    across a shadow root boundary.
+* Focus moves only in response to the user's own editing actions, and only within one document.
+    Script can already move focus with <code>focus()</code>.
+* [=Distribute text=] stops at any boundary between a <a element-state for=input>Password</a>
+    control and a control of another type. Pasted secrets therefore never spill from a masked field
+    into a visible one, or the other way around.
+
+
+<h2 id=more-examples>More examples</h2>
+
+*This section is non-normative.*
+
+<div class=example id=example-country-code>
+    A <{select}> element can be part of a chain. When the user picks a country code, focus moves to
+    the area code, and the joined value comes out in a full international format.
+
+    <xmp highlight=html>
+    <fieldset>
+      <legend>Mobile number (focus moves to the next box automatically)</legend>
+      <select name="mobile" link="mobileArea" autocomplete="tel-country-code"
+              aria-label="Country code">
+        <option value="+1">+1</option>
+        <option value="+52">+52</option>
+      </select>
+      <input type="tel" id="mobileArea" name="mobile" maxlength="3" link="mobilePrefix"
+             autocomplete="tel-area-code" aria-label="Area code">
+      <input type="tel" id="mobilePrefix" name="mobile" maxlength="3" link="mobileLine"
+             autocomplete="tel-local-prefix" aria-label="Prefix">
+      <input type="tel" id="mobileLine" name="mobile" maxlength="4"
+             autocomplete="tel-local-suffix" aria-label="Line number">
+    </fieldset>
+    </xmp>
+
+    The form submits <code>mobile=%2B15551234567</code>, which is <code>+15551234567</code> once
+    percent-decoded.
+</div>
+
+<div class=example id=example-one-time-code>
+    A one-time code with one box per digit. Pasting <kbd>482913</kbd> into the first box, or autofilling
+    it there, fills all six boxes.
+
+    <xmp highlight=html>
+    <form action="/verify" method="post">
+      <fieldset>
+        <legend>Enter the 6-digit code we sent you</legend>
+        <input name="code" id="d1" link="d2" maxlength="1" inputmode="numeric"
+               autocomplete="one-time-code" aria-label="Digit 1">
+        <input name="code" id="d2" link="d3" maxlength="1" inputmode="numeric" aria-label="Digit 2">
+        <input name="code" id="d3" link="d4" maxlength="1" inputmode="numeric" aria-label="Digit 3">
+        <input name="code" id="d4" link="d5" maxlength="1" inputmode="numeric" aria-label="Digit 4">
+        <input name="code" id="d5" link="d6" maxlength="1" inputmode="numeric" aria-label="Digit 5">
+        <input name="code" id="d6" maxlength="1" inputmode="numeric" aria-label="Digit 6">
+      </fieldset>
+      <button>Verify</button>
+    </form>
+    </xmp>
+
+    The form submits <code>code=482913</code>. If the user notices a wrong digit, they can press
+    <kbd>Backspace</kbd> repeatedly to move back through the boxes, or select a digit and type a new
+    one.
+</div>
+
+<div class=example id=example-card>
+    Links and names do different jobs. The last card number group links to the expiry month so focus
+    keeps moving, but the card number and the expiry date have different names, so each is its own
+    entry.
+
+    <xmp highlight=html>
+    <input name="cc-number" id="cc1" link="cc2" maxlength="4" inputmode="numeric"
+           autocomplete="cc-number" aria-label="Card number, group 1 of 4">
+    <input name="cc-number" id="cc2" link="cc3" maxlength="4" inputmode="numeric"
+           aria-label="Card number, group 2 of 4">
+    <input name="cc-number" id="cc3" link="cc4" maxlength="4" inputmode="numeric"
+           aria-label="Card number, group 3 of 4">
+    <input name="cc-number" id="cc4" link="ccMonth" maxlength="4" inputmode="numeric"
+           aria-label="Card number, group 4 of 4">
+    <select name="cc-exp" id="ccMonth" link="ccYear" autocomplete="cc-exp-month"
+            aria-label="Expiry month">
+      <option value="01">01</option> <!-- … --> <option value="12">12</option>
+    </select>
+    <select name="cc-exp" id="ccYear" autocomplete="cc-exp-year" aria-label="Expiry year">
+      <option value="26">2026</option> <!-- … --> <option value="35">2035</option>
+    </select>
+    </xmp>
+
+    Choosing 12 and 2030 submits
+    <code>cc-number=4111111111111111&amp;cc-exp=1230</code>. Pasting a 16-digit card number into the
+    first group fills all four groups. Distribution stops at the <{select}> element.
+</div>
+
+
+<h2 id=open-issues>Open issues</h2>
+
+Issue: <strong>Attribute name.</strong> <code>link</code> is easy to confuse with the <{link}> element
+and with the obsolete <code>link</code> attribute of <code>body</code>. Alternatives include
+<code>next</code>, <code>linkto</code>, and <code>continues</code>.
+
+Issue: <strong>Formatting characters in pasted text.</strong> Pasting <kbd>(555) 123-4567</kbd> into
+the telephone fields spreads the parentheses, space, and hyphen across the segments. Should user
+agents drop such characters when every control in the chain has
+<code>inputmode="numeric"</code>, or should authors signal the allowed characters some other way?
+
+Issue: <strong>Separator.</strong> Should authors be able to put a separator between the joined
+values, for example with a <code>joiner="-"</code> attribute on the first control?
+
+Issue: <strong>More controls.</strong> Should <{textarea}>, <{input}> elements in the
+<a element-state for=input>Number</a>, <a element-state for=input>Email</a>, and
+<a element-state for=input>URL</a> states, or <{select}> elements with <{select/multiple}> be
+linkable?
+
+Issue: <strong>More editing commands.</strong> Should <kbd>Delete</kbd> at the end of a control, word
+deletion, and <kbd>Home</kbd>/<kbd>End</kbd> also cross control boundaries?
+
+Issue: <strong>Validating the whole value.</strong> Should there be a way to validate the joined value
+as a whole, for example a pattern that applies to the entire chain?

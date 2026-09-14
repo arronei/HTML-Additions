@@ -27,7 +27,7 @@ The script listens on `document`, so controls added later work without any setup
 Open `test.html` in a browser, or run it headless:
 
 ```sh
-chrome --headless=new --dump-dom polyfill/test.html | grep -E "PASS|FAIL"
+chrome --headless=new --dump-dom linked-form-controls/polyfill/test.html | grep -E "PASS|FAIL"
 ```
 
 All 11 tests pass in Chrome. Without the script tag, all 11 fail.

@@ -3,7 +3,7 @@ Title: Linked Form Controls
 Shortname: linked-form-controls
 Level: none
 Status: LD
-ED: https://arronei.github.io/HTML-Additions/spec/
+ED: https://arronei.github.io/HTML-Additions/linked-form-controls/spec/
 Repository: arronei/HTML-Additions
 Editor: Arron Eicholz
 Abstract: This specification extends HTML with a <code>link</code> content attribute for text-entry

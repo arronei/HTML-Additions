@@ -6,6 +6,8 @@ supporting material, such as a polyfill, alongside it.
 | Proposal | What it adds |
 | --- | --- |
 | [Linked form controls](linked-form-controls/) | A `link` attribute that chains text inputs and selects into one segmented field, such as a phone number or a one-time code. |
+| [Collector element](collector-element/) | A `<collector>` element that combines the inputs and selects inside it into one value through a `pattern` template, and validates that value as a whole. |
+| [Formatter attribute](formatter-attribute/) | A `formatter` attribute that applies a template, such as `({value})`, to an input's or select's value when the form is submitted. |
 
 Specs are written in [Bikeshed](https://speced.github.io/bikeshed/). To build one:
 

@@ -1,0 +1,209 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>collector element polyfill: tests</title>
+<script src="collector-element.js"></script>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+  const tests = [];
+  const test = (name, body) => tests.push([name, body]);
+
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+
+  // Parsed collectors are upgraded by a MutationObserver, so let its microtask run.
+  async function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    await Promise.resolve();
+    return (id) => document.getElementById(id);
+  }
+
+  const entries = (form) => [...new FormData(form)];
+  const validity = (el) => Object.entries(Object.getOwnPropertyDescriptors(el.validity))
+    .filter(([key, { value }]) => key !== 'valid' && value).map(([key]) => key);
+
+  const PHONE = `
+    <form id="form">
+      <label for="phone" id="label">Phone number</label>
+      <collector id="phone" name="phone" required pattern="({areaCode}) {centralOfficeCode}-{lineNumber}">
+        (<input type="tel" id="area" name="areaCode" maxlength="3">)
+        <input type="tel" id="office" name="centralOfficeCode" maxlength="3"> -
+        <input type="tel" id="line" name="lineNumber" maxlength="4">
+      </collector>
+    </form>`;
+
+  test('the DOM interface', async () => {
+    const $ = await fixture(PHONE);
+    const phone = $('phone');
+    assertEqual(phone instanceof HTMLCollectorElement && phone instanceof HTMLElement, true, 'instanceof');
+    assertEqual([phone.type, phone.name, phone.pattern, phone.required, phone.disabled],
+      ['collector', 'phone', '({areaCode}) {centralOfficeCode}-{lineNumber}', true, false], 'reflection');
+    phone.disabled = true;
+    assertEqual(phone.hasAttribute('disabled'), true, 'boolean setter');
+    assertEqual(phone.form === $('form'), true, 'form');
+    assertEqual(phone.labels.length === 1 && phone.labels[0] === $('label'), true, 'labels');
+    assertEqual(document.createElement('collector') instanceof HTMLCollectorElement, true, 'createElement');
+    assertEqual(new HTMLCollectorElement().localName, 'collector', 'constructor');
+  });
+
+  test('every row of the spec\'s introduction table (value and validity)', async () => {
+    const $ = await fixture(PHONE);
+    const row = (area, office, line, value, flags) => {
+      [$('area').value, $('office').value, $('line').value] = [area, office, line];
+      assertEqual([$('phone').value, validity($('phone'))], [value, flags], `${area}|${office}|${line}`);
+    };
+    row('', '', '', '', ['valueMissing']);
+    row('206', '', '', '(206) -', ['patternMismatch']);
+    row('206', '555', '0123', '(206) 555-0123', []);
+  });
+
+  test('every row of the spec\'s escaping table, plus lenient parsing', async () => {
+    const $ = await fixture(`
+      <collector id="a" pattern="({areaCode})"><input name="areaCode" value="206"></collector>
+      <collector id="b" pattern="{{{areaCode}}}"><input name="areaCode" value="206"></collector>
+      <collector id="c" pattern="{{areaCode}}-{areaCode}"><input name="areaCode" value="206"></collector>
+      <collector id="d" pattern="{areaCode}{areaCode}"><input name="areaCode" value="206"></collector>
+      <collector id="e" pattern="{ {areaCode} }{missing}"><input name="areaCode" value="206"></collector>`);
+    assertEqual(['a', 'b', 'c', 'd', 'e'].map((id) => $(id).value), ['(206)', '{206}', '{areaCode}-206', '206206', '{ 206 }'], 'values');
+  });
+
+  test('selects, unnamed pieces, duplicates, disabled pieces, and uncollected controls', async () => {
+    const $ = await fixture(`
+      <collector id="dob" pattern="{year}-{month}-{day}">
+        <input name="day" value="04">
+        <select name="month"><option value="">Month</option><option value="07">July</option></select>
+        <input name="year" value="1990">
+        <input name="year" value="duplicate">
+        <input type="checkbox" name="day" checked>
+      </collector>
+      <collector id="code"><input value="4"><input value="8"><select><option>2</option></select></collector>
+      <collector id="fixed" pattern="+{cc} {n}"><input name="cc" value="1" disabled><input name="n" value="555"></collector>`);
+    assertEqual([$('dob').value, validity($('dob'))], ['1990--04', ['patternMismatch']], 'empty select option');
+    $('dob').querySelector('select').value = '07';
+    assertEqual([$('dob').value, validity($('dob'))], ['1990-07-04', []], 'picked month');
+    assertEqual($('code').value, '482', 'no pattern: tree order');
+    assertEqual([$('fixed').value, $('fixed').validity.valid], ['+ 555', true], 'disabled piece');
+  });
+
+  test('the collector rolls up its pieces\' validity and message', async () => {
+    const $ = await fixture(`
+      <collector id="c" pattern="{user}@{domain}">
+        <input id="user" name="user" value="me">
+        <input id="domain" name="domain" type="url" value="not a url">
+      </collector>`);
+    const domainMessage = (() => {
+      $('domain').setCustomValidity('');
+      return $('domain').validationMessage;
+    })();
+    assertEqual(validity($('c')), ['typeMismatch'], 'flags');
+    assertEqual($('c').validationMessage, domainMessage, 'message from the piece');
+
+    $('domain').value = '';
+    assertEqual([validity($('c')), $('c').validationMessage], [['patternMismatch'], 'Please fill out all parts of this field.'], 'own message');
+    assertEqual($('domain').validationMessage, $('c').validationMessage, 'the problem control carries it');
+
+    $('c').setCustomValidity('Enter both parts.');
+    assertEqual($('c').validationMessage, 'Enter both parts.', 'custom message wins');
+    $('c').setCustomValidity('');
+    $('domain').value = 'https://example.com';
+    assertEqual([$('c').validity.valid, $('domain').validationMessage], [true, ''], 'valid again, message removed');
+
+    $('user').setCustomValidity('Taken.');
+    assertEqual([validity($('c')), $('c').validationMessage, $('user').validationMessage],
+      [['customError'], 'Taken.', 'Taken.'], 'a piece\'s own custom message survives');
+  });
+
+  test('optional, disabled, and datalist collectors', async () => {
+    const $ = await fixture(`
+      <form id="form">
+        <collector id="optional" name="optional" pattern="({a})"><input name="a"></collector>
+        <collector id="disabled" name="disabled" required disabled><input id="inner" value="x"></collector>
+        <fieldset disabled><legend><collector id="legend" required><input></collector></legend></fieldset>
+        <datalist><collector id="listed" required><input></collector></datalist>
+      </form>`);
+    await Promise.resolve();
+    assertEqual([$('optional').value, $('optional').validity.valid], ['', true], 'blank optional collector');
+    assertEqual([$('disabled').willValidate, $('disabled').checkValidity(), $('inner').disabled], [false, true, true], 'disabled');
+    assertEqual([$('legend').willValidate, $('listed').willValidate], [true, false], 'legend and datalist');
+    $('disabled').disabled = false;
+    await Promise.resolve();
+    assertEqual($('inner').disabled, false, 'descendants re-enabled');
+  });
+
+  test('form validation reports the collector, and invalid fires at it', async () => {
+    const $ = await fixture(PHONE);
+    const fired = [];
+    for (const id of ['phone', 'area', 'office', 'line']) $(id).addEventListener('invalid', () => fired.push(id));
+    $('area').value = '206';
+    assertEqual($('form').checkValidity(), false, 'form.checkValidity()');
+    assertEqual(fired, ['phone'], 'invalid events');
+
+    fired.length = 0;
+    $('office').setAttribute('pattern', '[0-9]{3}');
+    $('office').value = 'abc';
+    assertEqual($('office').checkValidity(), false, 'piece.checkValidity()');
+    assertEqual(fired, ['office'], 'checking a piece directly fires at the piece');
+
+    fired.length = 0;
+    $('office').value = '555';
+    assertEqual($('phone').reportValidity(), false, 'reportValidity()');
+    assertEqual([fired, document.activeElement.id], [['phone'], 'line'], 'focus moves to the problem control');
+
+    fired.length = 0;
+    $('area').focus();
+    $('phone').addEventListener('invalid', (event) => event.preventDefault(), { once: true });
+    $('phone').reportValidity();
+    assertEqual([fired, document.activeElement.id], [['phone'], 'area'], 'canceling invalid stops the report');
+  });
+
+  test('form submission sends the collector, in tree order, and not its pieces', async () => {
+    const $ = await fixture(`
+      <form id="form">
+        <input name="before" value="b">
+        <collector name="phone" pattern="({areaCode}) {lineNumber}">
+          <input name="areaCode" value="206">
+          <input name="save" value="yes">
+          <input name="lineNumber" value="5550123" dir="ltr">
+        </collector>
+        <collector name="blank" pattern="({x})"><input name="x"></collector>
+        <collector name="off" disabled><input name="y" value="1"></collector>
+        <collector><input name="z" value="2"></collector>
+        <input name="after" value="a">
+      </form>
+      <collector name="outside" form="form" pattern="{w}"><input name="w" form="form" value="w"></collector>`);
+    assertEqual(entries($('form')), [['before', 'b'], ['phone', '(206) 5550123'], ['save', 'yes'], ['blank', ''],
+      ['after', 'a'], ['outside', 'w']], 'entries');
+  });
+
+  test('labels focus the first piece and name the group', async () => {
+    const $ = await fixture(PHONE);
+    await Promise.resolve();
+    $('label').click();
+    assertEqual(document.activeElement.id, 'area', 'focus');
+    assertEqual(['role', 'aria-label', 'aria-required'].map((name) => $('phone').getAttribute(name)),
+      ['group', 'Phone number', 'true'], 'attributes');
+  });
+
+  (async () => {
+    for (const [name, body] of tests) {
+      document.getElementById('fixture')?.remove();
+      try {
+        await body();
+        log.textContent += `PASS  ${name}\n`;
+      } catch (error) {
+        failed++;
+        log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+      }
+    }
+    log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+    document.title = failed ? 'FAIL' : 'PASS';
+  })();
+</script>

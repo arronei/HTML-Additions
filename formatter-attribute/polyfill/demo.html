@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formatter attribute demo</title>
+<script src="formatter-attribute.js"></script>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+  body { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+  input, select, button { font: inherit; }
+  code, output { font-family: ui-monospace, monospace; }
+  output { display: block; margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+           background: #8881; white-space: pre-wrap; }
+  .try { color: GrayText; margin: 0.25rem 0 0.5rem; }
+</style>
+
+<h1>Formatter attribute</h1>
+<p>
+  Live versions of the examples in the <a href="../spec/index.html">Formatter Attribute spec</a>, running on
+  <code>formatter-attribute.js</code>. Under each form is what the form would submit, updated as you type.
+</p>
+
+<h2>Area code</h2>
+<p class="try">Type 206. The field shows 206 and validates 206, but the form submits (206). Clear it to submit an empty value.</p>
+<form>
+  <label>Area code
+    <input type="tel" name="areaCode" maxlength="3" size="3" pattern="[0-9]{3}" formatter="({value})">
+  </label>
+  <output></output>
+</form>
+
+<h2>Country calling code</h2>
+<p class="try">The option values are plain numbers; the formatter adds the plus sign.</p>
+<form>
+  <select name="country" formatter="+{value}">
+    <option value="1">United States (+1)</option>
+    <option value="44">United Kingdom (+44)</option>
+    <option value="52">Mexico (+52)</option>
+  </select>
+  <output></output>
+</form>
+
+<h2>Amount</h2>
+<p class="try">Type 25.50. The min and step attributes check the number; the server gets the currency too.</p>
+<form>
+  <label>Amount (US dollars)
+    <input type="number" name="amount" min="1" step="0.01" formatter="{value} USD">
+  </label>
+  <output></output>
+</form>
+
+<h2>Tags</h2>
+<p class="try">Select several options. Each selected value is formatted on its own.</p>
+<form>
+  <select name="tags" multiple formatter="tag:{value}">
+    <option>news</option>
+    <option>sports</option>
+    <option>weather</option>
+  </select>
+  <output></output>
+</form>
+
+<script>
+  // new FormData(form) builds the same entry list as a real submission.
+  const show = (form) => {
+    form.querySelector('output').value = new URLSearchParams(new FormData(form)).toString();
+  };
+  for (const form of document.forms) {
+    show(form);
+    form.addEventListener('input', () => show(form));
+    form.addEventListener('change', () => show(form));
+  }
+</script>

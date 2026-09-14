@@ -1,0 +1,102 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>formatter attribute polyfill: tests</title>
+<script src="formatter-attribute.js"></script>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+
+  function test(name, body) {
+    document.getElementById('fixture')?.remove();
+    try {
+      body();
+      log.textContent += `PASS  ${name}\n`;
+    } catch (error) {
+      failed++;
+      log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+    }
+  }
+
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+
+  function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    return (id) => document.getElementById(id);
+  }
+
+  const entries = (form) => [...new FormData(form)];
+
+  test('formatter reflects the formatter attribute', () => {
+    const $ = fixture('<input id="a" formatter="({value})"><select id="s"></select>');
+    assertEqual($('a').formatter, '({value})', 'input getter');
+    $('s').formatter = '+{value}';
+    assertEqual($('s').getAttribute('formatter'), '+{value}', 'select setter');
+    assertEqual(document.createElement('input').formatter, '', 'missing attribute');
+  });
+
+  test('the submitted value is formatted; value and validation are not', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input id="area" name="areaCode" pattern="[0-9]{3}" formatter="({value})" value="206">
+      </form>`);
+    assertEqual(entries($('form')), [['areaCode', '(206)']], 'entries');
+    assertEqual([$('area').value, $('area').validity.valid], ['206', true], 'plain value and validity');
+  });
+
+  test('empty values are not formatted', () => {
+    const $ = fixture('<form id="form"><input name="areaCode" formatter="({value})"></form>');
+    assertEqual(entries($('form')), [['areaCode', '']], 'entries');
+  });
+
+  test('every row of the spec\'s escaping table, plus lenient parsing', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input name="a" value="206" formatter="({value})">
+        <input name="b" value="206" formatter="{{{value}}}">
+        <input name="c" value="206" formatter="{{value}}">
+        <input name="d" value="206" formatter="{value}-{value}">
+        <input name="e" value="206" formatter="{Value}[{value}]">
+        <input name="f" value="206" formatter="{ {value} }">
+        <input name="g" value="206" formatter="no placeholder">
+      </form>`);
+    assertEqual(entries($('form')), [['a', '(206)'], ['b', '{206}'], ['c', '{value}'], ['d', '206-206'],
+      ['e', '[206]'], ['f', '{ 206 }'], ['g', 'no placeholder']], 'entries');
+  });
+
+  test('select options are formatted one by one', () => {
+    const $ = fixture(`
+      <form id="form">
+        <select name="country" formatter="+{value}"><option value="44" selected>UK</option></select>
+        <select name="tags" multiple formatter="tag:{value}">
+          <option selected>news</option><option>sports</option><option selected>weather</option>
+        </select>
+      </form>`);
+    assertEqual(entries($('form')), [['country', '+44'], ['tags', 'tag:news'], ['tags', 'tag:weather']], 'entries');
+  });
+
+  test('non-formattable controls and shared names are matched correctly', () => {
+    const $ = fixture(`
+      <form id="form">
+        <input type="checkbox" name="x" formatter="({value})" checked>
+        <input type="hidden" name="x" value="h" formatter="({value})">
+        <input name="x" value="t" formatter="({value})">
+        <input type="checkbox" name="x" value="unchecked" formatter="({value})">
+        <input name="x" value="d" formatter="({value})" disabled>
+        <select name="x"><option value="s" selected>s</option></select>
+        <input name="x" value="last" formatter="<{value}>">
+      </form>`);
+    assertEqual(entries($('form')), [['x', 'on'], ['x', 'h'], ['x', '(t)'], ['x', 's'], ['x', '<last>']], 'entries');
+  });
+
+  log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+  document.title = failed ? 'FAIL' : 'PASS';
+</script>

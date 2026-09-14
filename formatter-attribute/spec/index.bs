@@ -1,0 +1,426 @@
+<pre class=metadata>
+Title: The Formatter Attribute
+Shortname: formatter-attribute
+Level: none
+Status: LD
+ED: https://arronei.github.io/HTML-Additions/formatter-attribute/spec/
+Repository: arronei/HTML-Additions
+Editor: Arron Eicholz
+Abstract: This specification extends HTML with a <code>formatter</code> content attribute for
+    <{input}> and <{select}> elements. The attribute is a template, such as <code>({value})</code>,
+    that the user agent applies to the control's value when the form is submitted. The user still
+    sees and edits the plain value, validation still checks the plain value, and the server receives
+    the formatted one, without script.
+Markup Shorthands: markdown yes, css no
+Complain About: accidental-2119 no, missing-example-ids yes
+Assume Explicit For: yes
+</pre>
+
+<pre class=link-defaults>
+spec:html; type:element; text:input
+spec:html; type:element; text:select
+spec:html; type:element; text:option
+spec:html; type:element; text:textarea
+spec:html; type:element-attr; for:input; text:type
+spec:html; type:element-attr; for:input; text:name
+spec:html; type:element-attr; for:input; text:value
+spec:html; type:element-attr; for:select; text:multiple
+</pre>
+
+<pre class=anchors>
+spec: html; urlPrefix: https://html.spec.whatwg.org/multipage/
+    urlPrefix: form-control-infrastructure.html
+        type: dfn
+            text: value; for: form control; url: #concept-fe-value
+            text: constructing the entry list; url: #constructing-the-form-data-set
+    urlPrefix: input.html
+        type: dfn
+            text: value mode; url: #dom-input-value
+            text: value; for: value mode; url: #dom-input-value-value
+    urlPrefix: form-elements.html
+        type: dfn
+            text: list of options; url: #concept-select-option-list
+            text: selectedness; url: #concept-option-selectedness
+            text: value; for: option; url: #concept-option-value
+            text: disabled; for: option; url: #concept-option-disabled
+</pre>
+
+
+<h2 id=intro>Introduction</h2>
+
+*This section is non-normative.*
+
+Servers often expect a value in a format that is awkward for users to type: a telephone area code
+in parentheses, an amount with its currency code, a country calling code with a leading
+<code>+</code>. Today authors either make the user type the extra characters, which invites mistakes
+and needs looser validation, or add script that rewrites the value before the form is submitted.
+
+The <{input/formatter}> attribute lets authors declare the submitted format instead. The user types
+only the part that varies, and the user agent adds the rest when the form is submitted.
+
+<div class=example id=example-intro-area-code>
+    <xmp highlight=html>
+    <form action="/register">
+      <label>Area code
+        <input type="tel" name="areaCode" maxlength="3" pattern="[0-9]{3}"
+               formatter="({value})">
+      </label>
+      <button>Register</button>
+    </form>
+    </xmp>
+
+    The user types <kbd>206</kbd>. The field shows <code>206</code>, the <{input/pattern}> attribute
+    checks <code>206</code>, and {{HTMLInputElement/value}} returns <code>"206"</code>. Submitting the
+    form sends:
+
+    <pre>areaCode=(206)</pre>
+
+    If the user leaves the field blank, the form sends <code>areaCode=</code>, not
+    <code>areaCode=()</code>.
+</div>
+
+User agents that don't support this specification ignore the attribute and submit the plain value,
+<code>areaCode=206</code>.
+
+
+<h2 id=the-formatter-attribute>The <code>formatter</code> attribute</h2>
+
+<h3 id=formattable-elements>Formattable elements</h3>
+
+A <dfn export>formattable element</dfn> is either:
+
+* an <{input}> element whose <{input/type}> attribute is in a state whose [=value mode=] is
+    [=value mode/value=]; or
+* a <{select}> element.
+
+Note: The states whose [=value mode=] is [=value mode/value=] are Text, Search, Telephone, URL,
+Email, Password, Date, Month, Week, Time, Local Date and Time, Number, Range, and Color. Checkboxes,
+radio buttons, file uploads, hidden inputs, and buttons submit values that the author already
+controls with the <{input/value}> attribute, so they have no need for a formatter.
+
+<h3 id=the-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for="input, select">formatter</dfn> content attribute is a template for the
+value that the control submits. It can be specified on <{input}> and <{select}> elements. It must
+only be specified on [=formattable elements=]. On any other <{input}> element, the attribute does
+not apply and has no effect.
+
+The template is made up of literal text and the value placeholder,
+<code>{value}</code>, which stands for the control's value. The value placeholder can appear any
+number of times, including not at all. To include a literal U+007B ({) or U+007D (}) in the
+submitted value, authors write it twice: <code>&#123;&#123;</code> or <code>&#125;&#125;</code>.
+
+<div class=example id=example-escaping>
+    With a control whose value is <code>206</code>:
+
+    <table class=data>
+        <thead>
+            <tr><th><{input/formatter}><th>Submitted value
+        <tbody>
+            <tr><td><code>({value})</code><td><code>(206)</code>
+            <tr><td><code>&#123;&#123;{value}&#125;&#125;</code><td><code>{206}</code>
+            <tr><td><code>&#123;&#123;value&#125;&#125;</code><td><code>{value}</code>
+            <tr><td><code>{value}-{value}</code><td><code>206-206</code>
+    </table>
+</div>
+
+If present, the attribute's value must be a <dfn export>valid formatter template</dfn>: a string
+that, when [=parse a formatter template|parsed=], never reaches an [=unmatched brace=], and in which
+every placeholder is <code>{value}</code>.
+
+<div algorithm="parse a formatter template">
+    To <dfn export>parse a formatter template</dfn> given a [=string=] |input|, run these steps. They
+    return a [=list=] whose [=list/items=] are either [=strings=], which are literal text, or the
+    special value <dfn>placeholder</dfn>.
+
+    1. Let |tokens| be an empty [=list=].
+
+    1. Let |literal| be the empty string.
+
+    1. Let |position| be a [=string/position variable=] for |input|, initially pointing at the start
+        of |input|.
+
+    1. [=iteration/While=] |position| is not past the end of |input|:
+
+        1. Let |c| be the [=code point=] at |position| within |input|.
+
+        1. If |c| is U+007B ({) or U+007D (}), and the code point after |position| is also |c|,
+            then append |c| to |literal|, advance |position| by 2, and [=iteration/continue=].
+
+        1. If |c| is U+007B ({), then:
+
+            1. Let |start| be |position|.
+
+            1. Advance |position| by 1.
+
+            1. Let |identifier| be the result of [=collecting a sequence of code points=] that are
+                neither U+007B ({) nor U+007D (}) from |input|, given |position|.
+
+            1. If |identifier| is not the empty string, and |position| is not past the end of
+                |input|, and the code point at |position| is U+007D (}), then:
+
+                1. If |literal| is not the empty string, then [=list/append=] |literal| to
+                    |tokens|, and set |literal| to the empty string.
+
+                1. If |identifier| is "<code>value</code>", then [=list/append=] [=placeholder=]
+                    to |tokens|. Otherwise, the placeholder is replaced with nothing.
+
+                1. Advance |position| by 1.
+
+                1. [=iteration/Continue=].
+
+            1. <dfn>Unmatched brace</dfn>: Set |position| to |start|.
+
+        1. Append |c| to |literal|, and advance |position| by 1. If |c| is U+007B ({) or U+007D (}),
+            this is also an [=unmatched brace=].
+
+    1. If |literal| is not the empty string, then [=list/append=] |literal| to |tokens|.
+
+    1. Return |tokens|.
+</div>
+
+Note: User agents are lenient with invalid templates. A brace that is neither doubled nor part of a
+placeholder is kept as literal text, and a placeholder other than <code>{value}</code>, such as
+<code>{Value}</code>, is replaced with nothing.
+
+<div algorithm>
+    To <dfn export>format a value</dfn> given a [=formattable element=] |element| and a [=string=]
+    |value|:
+
+    1. If |element| does not have a <{input/formatter}> attribute, or |value| is the empty string,
+        then return |value|.
+
+    1. Let |result| be the empty string.
+
+    1. [=list/For each=] |token| of the result of [=parse a formatter template|parsing=] the value of
+        |element|'s <{input/formatter}> attribute:
+
+        1. If |token| is [=placeholder=], then append |value| to |result|.
+
+        1. Otherwise, append |token| to |result|.
+
+    1. Return |result|.
+</div>
+
+Note: Empty values are never formatted, so an optional field that the user leaves blank doesn't
+submit the template's literal text.
+
+<h3 id=the-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+interface mixin FormatterAttribute {
+  [CEReactions, Reflect] attribute DOMString formatter;
+};
+HTMLInputElement includes FormatterAttribute;
+HTMLSelectElement includes FormatterAttribute;
+</xmp>
+
+The <dfn attribute for=FormatterAttribute>formatter</dfn> IDL attribute must [=reflect=] the
+<{input/formatter}> content attribute.
+
+<div class=example id=example-idl>
+    <xmp highlight=js>
+    const areaCode = form.elements.areaCode;
+
+    areaCode.value;                         // "206"
+    areaCode.formatter;                     // "({value})"
+    new FormData(form).get("areaCode");     // "(206)"
+
+    // Feature detection.
+    const supported = "formatter" in HTMLInputElement.prototype;
+    </xmp>
+</div>
+
+
+<h2 id=form-submission>Form submission</h2>
+
+<h3 id=patch-construct-the-entry-list>Changes to constructing the entry list</h3>
+
+The algorithm for [=constructing the entry list=] [[!HTML]] is changed as follows. Inserted text is
+<ins>marked like this</ins> and removed text is <del>marked like this</del>. Steps that don't
+change are summarized in brackets.
+
+<div algorithm="construct the entry list (patched)">
+    5. For each element |field| in <var ignore>controls</var>, in [=tree order=]:
+
+        1. [The steps up to and including "Let <var ignore>name</var> be the value of the |field|
+            element's <{input/name}> attribute" are unchanged.]
+
+        1. If the |field| element is a <{select}> element, then for each <{option}> element in the
+            <{select}> element's [=list of options=] whose [=selectedness=] is true and that is not
+            [=option/disabled=], [=entry list/create an entry=] with <var ignore>name</var> and the
+            <ins>result of [=format a value|formatting=], given |field| and the</ins>
+            [=option/value=] of the <{option}> element, and append it to
+            <var ignore>entry list</var>.
+
+        1. [The steps for checkboxes, radio buttons, file uploads, and <code>_charset_</code> are
+            unchanged.]
+
+        1. Otherwise, [=entry list/create an entry=] with <var ignore>name</var> and <del>the value
+            of the |field| element</del> <ins>the result of [=format a value|formatting=] |field|'s
+            value, given |field|, if |field| is a [=formattable element=], or the value of |field|
+            otherwise</ins>, and append it to <var ignore>entry list</var>.
+
+        1. [If the element has a <code>dirname</code> attribute, then append its directionality
+            entry. This step is unchanged.]
+</div>
+
+Note: {{FormData}}'s constructor and the {{HTMLElement/formdata}} event use the same algorithm.
+Scripts calling <code>new FormData(form)</code> therefore see the formatted value, exactly as the
+server does.
+
+<h3 id=other-features>Interaction with other features</h3>
+
+*This section is non-normative.*
+
+: What the user sees
+:: The <{input/formatter}> attribute doesn't change what the control displays or what the user
+    edits.
+: {{HTMLInputElement/value}}
+:: The IDL attribute keeps returning the plain value. Only form submission sees the formatted value.
+: Constraint validation
+:: <{input/required}>, <{input/pattern}>, <code>minlength</code>, <code>maxlength</code>, and every
+    other constraint check the plain value.
+: <code>dirname</code>
+:: The directionality entry is unchanged.
+: <{select}> elements with <{select/multiple}>
+:: Each selected option's value is formatted on its own, and each becomes its own entry.
+: Autofill
+:: Autofill fills the plain value, as it does today. The formatter applies when the form is
+    submitted.
+
+
+<h2 id=changes-to-html>Changes to the HTML Standard</h2>
+
+To integrate this specification into the HTML Standard [[!HTML]], make these changes:
+
+1. In <a href="https://html.spec.whatwg.org/multipage/input.html#the-input-element">the
+    <code>input</code> element</a>:
+    * Add <{input/formatter}> to the element's content attributes.
+    * Add <code>HTMLInputElement includes FormatterAttribute;</code> to the DOM interface.
+    * Add a <{input/formatter}> row to the table that summarizes which content attributes apply to
+        each <{input/type}> state. Mark it "Yes" for every state whose [=value mode=] is
+        [=value mode/value=], and not applicable for every other state.
+1. In <a href="https://html.spec.whatwg.org/multipage/form-elements.html#the-select-element">the
+    <code>select</code> element</a>, add <{select/formatter}> to the element's content attributes,
+    and <code>HTMLSelectElement includes FormatterAttribute;</code> to the DOM interface.
+1. Add the definitions in [[#the-formatter-attribute]] as a new subsection of "Attributes common to
+    form controls".
+1. Apply the change in [[#patch-construct-the-entry-list]].
+1. In the index of element attributes, add a row: attribute <code>formatter</code>; elements
+    <code>input</code>, <code>select</code>; description "Template for the submitted value"; value
+    "Text".
+
+
+<h2 id=a11y>Accessibility considerations</h2>
+
+The formatted value is never shown to the user. If the format matters to the user, for example
+because they will see it later in a confirmation email, authors should describe it in the control's
+label or nearby text.
+
+Because the user no longer types the fixed characters, fields can use simpler input modes, such as
+<code>inputmode="numeric"</code>, and simpler instructions. This helps users of on-screen keyboards,
+voice input, and switch access.
+
+
+<h2 id=security-privacy>Security and privacy considerations</h2>
+
+* This specification exposes no new information. The formatted value contains only the control's
+    value and text the author wrote.
+* The <{input/formatter}> attribute is plain text substitution. It can't run script, fetch
+    resources, or evaluate expressions.
+* Servers must not rely on the formatter for security. User agents without support, and clients
+    that aren't browsers, submit whatever values they like.
+
+
+<h2 id=more-examples>More examples</h2>
+
+*This section is non-normative.*
+
+<div class=example id=example-country-code>
+    A formatter on a <{select}> element adds the <code>+</code> to a country calling code, so the
+    option values stay plain numbers.
+
+    <xmp highlight=html>
+    <select name="country" formatter="+{value}">
+      <option value="1">United States (+1)</option>
+      <option value="44">United Kingdom (+44)</option>
+    </select>
+    </xmp>
+
+    Choosing United Kingdom submits <code>country=+44</code>.
+</div>
+
+<div class=example id=example-amount>
+    The user types an amount, and the server receives it with its currency.
+
+    <xmp highlight=html>
+    <label>Amount (US dollars)
+      <input type="number" name="amount" min="1" step="0.01" formatter="{value} USD">
+    </label>
+    </xmp>
+
+    Typing <kbd>25.50</kbd> submits <code>amount=25.50 USD</code>. The <code>min</code> and
+    <code>step</code> attributes check the number the user typed.
+</div>
+
+<div class=example id=example-tags>
+    With <{select/multiple}>, each selected value is formatted separately.
+
+    <xmp highlight=html>
+    <select name="tags" multiple formatter="tag:{value}">
+      <option>news</option>
+      <option>sports</option>
+      <option>weather</option>
+    </select>
+    </xmp>
+
+    Selecting "news" and "weather" submits <code>tags=tag:news&amp;tags=tag:weather</code>.
+</div>
+
+
+<h2 id=alternate-proposals>Alternate proposals</h2>
+
+*This section is non-normative.*
+
+<h3 id=alt-collector-element>The <code>collector</code> element</h3>
+
+<a href="https://arronei.github.io/HTML-Additions/collector-element/spec/">The Collector Element</a>
+proposes a <code>collector</code> element whose <code>pattern</code> attribute uses the same
+template syntax to combine several controls into one submitted value. A collector around a single
+control can do the same job as a formatter:
+
+<xmp highlight=html>
+<collector name="areaCode" pattern="({digits})">
+  <input type="tel" name="digits" maxlength="3">
+</collector>
+</xmp>
+
+The <{input/formatter}> attribute is lighter for the common case of one control, needs no extra
+element, and keeps the control's own name. The two could be combined, for example by letting a formatted control inside
+a collector contribute its formatted value.
+
+<h3 id=alt-script>Script</h3>
+
+Authors can already rewrite values in a {{HTMLElement/formdata}} event listener. That works for
+<code>new FormData(form)</code> and for navigation, but it has to be written for each form, and it
+doesn't run when script is turned off.
+
+
+<h2 id=open-issues>Open issues</h2>
+
+Issue: <strong>Attribute name.</strong> Alternatives include <code>format</code>,
+<code>submitformat</code>, and <code>valueformat</code>.
+
+Issue: <strong>Empty values.</strong> Empty values are never formatted. Should authors be able to
+format them too, for example to send a default?
+
+Issue: <strong>Transformations.</strong> Should the template support simple transformations, such as
+<code>{value:upper}</code>, trimming, or padding with zeros to a fixed length?
+
+Issue: <strong>Reading the formatted value.</strong> Should there be a read-only
+<code>formattedValue</code> IDL attribute, so scripts can show the user what will be submitted
+without building a {{FormData}} object?
+
+Issue: <strong>More controls.</strong> Should <{textarea}> elements, and <{input}> elements in the
+Hidden state, accept <{input/formatter}>? Should form-associated custom elements be able to opt in?

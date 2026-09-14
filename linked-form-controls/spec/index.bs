@@ -824,6 +824,23 @@ password managers can supply a whole value at once instead of entering it one se
 </div>
 
 
+<h2 id=alternate-proposals>Alternate proposals</h2>
+
+*This section is non-normative.*
+
+<h3 id=alt-collector-element>The <code>collector</code> element</h3>
+
+<a href="https://arronei.github.io/HTML-Additions/collector-element/spec/">The Collector Element</a>
+takes a different approach to joining the pieces of a value. Instead of chaining controls with ID
+references, the controls go inside a <code>collector</code> element. Its <code>pattern</code>
+attribute, such as <code>({areaCode}) {centralOfficeCode}-{lineNumber}</code>, combines their values
+with separators, and the collector is validated as a whole, with one error message for the whole
+value. That addresses the separator and whole-value validation questions in [[#open-issues]]. It
+doesn't move focus or spread pasted text across the pieces, which is what the <{input/link}>
+attribute adds. The two designs could be combined, with a collector providing the value and
+validation, and links providing the editing behavior.
+
+
 <h2 id=open-issues>Open issues</h2>
 
 Issue: <strong>Attribute name.</strong> <code>link</code> is easy to confuse with the <{link}> element

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON templates demo</title>
+<script src="json-templates.js"></script>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+  body { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+  select { font: inherit; }
+  output { display: block; margin-top: 0.5rem; font-family: ui-monospace, monospace; }
+  code { font-family: ui-monospace, monospace; }
+  table { border-collapse: collapse; }
+  th, td { padding: 0.25rem 0.75rem; border-bottom: 1px solid #8884; text-align: start; }
+  .try { color: GrayText; margin: 0.25rem 0 0.5rem; }
+</style>
+
+<h1>JSON templates</h1>
+<p>
+  Live versions of the examples in the <a href="../spec/index.html">JSON Templates spec</a>, running on
+  <code>json-templates.js</code>. Serve this folder over HTTP, for example with <code>python -m http.server</code>;
+  browsers don't let pages fetch <code>file://</code> URLs.
+</p>
+
+<h2>Table rows</h2>
+<p class="try">Each row is a copy of the template, filled in from <code>json/tableData.json</code>.</p>
+<template id="tableRow" json="./json/tableData.json">
+  <tr><td key="city"></td><td key="state"></td></tr>
+</template>
+<table>
+  <thead>
+    <tr><th>City</th><th>State</th></tr>
+  </thead>
+  <tbody template="tableRow">
+    <tr><td colspan="2">Loading… (or open this page over HTTP)</td></tr>
+  </tbody>
+</table>
+
+<h2>Links</h2>
+<p class="try">An object value sets attributes. Each city's <code>href</code> and <code>content</code> come from <code>json/cities.json</code>.</p>
+<template id="cityLink" json="./json/cities.json">
+  <tr><td><a key="city"></a></td><td key="state"></td></tr>
+</template>
+<table>
+  <thead>
+    <tr><th>City</th><th>State</th></tr>
+  </thead>
+  <tbody template="cityLink">
+    <tr><td colspan="2">Loading…</td></tr>
+  </tbody>
+</table>
+
+<h2>Select options</h2>
+<p class="try">Each option's <code>value</code> differs from its label, and <code>"selected": true</code> picks Washington. The form value is shown below.</p>
+<form>
+  <template id="stateOption" json="./json/states.json">
+    <option key="state"></option>
+  </template>
+  <label>State
+    <select name="state" template="stateOption">
+      <option>Loading…</option>
+    </select>
+  </label>
+  <output></output>
+</form>
+
+<h2>A missing file</h2>
+<p class="try">The request fails, so the template fires <code>error</code> and the fallback stays.</p>
+<template id="missing" json="./json/missing.json">
+  <li key="name"></li>
+</template>
+<ul template="missing">
+  <li>Nothing to show.</li>
+</ul>
+
+<script>
+  const form = document.forms[0];
+  const show = () => { form.querySelector('output').value = new URLSearchParams(new FormData(form)).toString(); };
+  form.addEventListener('change', show);
+  document.getElementById('stateOption').addEventListener('load', show);
+</script>

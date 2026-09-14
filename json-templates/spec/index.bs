@@ -1,0 +1,735 @@
+<pre class=metadata>
+Title: JSON Templates
+Shortname: json-templates
+Level: none
+Status: LD
+ED: https://arronei.github.io/HTML-Additions/json-templates/spec/
+Repository: arronei/HTML-Additions
+Editor: Arron Eicholz
+Abstract: This specification extends HTML with three content attributes. The <code>json</code>
+    attribute on a <{template}> element names a JSON resource for the template to load. The
+    <code>template</code> attribute on any HTML element names a template, by its ID, to render into
+    that element. The <code>key</code> attribute marks the elements in a template that receive data.
+    The user agent makes one copy of the template for each item in the JSON data, and fills in each
+    keyed element's text and attributes from the item's property with the same name, without script.
+Markup Shorthands: markdown yes, css no
+Complain About: accidental-2119 no, missing-example-ids yes
+Assume Explicit For: yes
+</pre>
+
+<pre class=link-defaults>
+spec:html; type:element; text:template
+spec:html; type:element; text:table
+spec:html; type:element; text:tbody
+spec:html; type:element; text:select
+spec:html; type:element; text:option
+spec:html; type:element; text:script
+spec:html; type:element; text:iframe
+spec:html; type:element; text:a
+spec:html; type:element; text:img
+spec:html; type:dfn; text:template contents
+spec:html; type:dfn; text:reflect
+spec:dom; type:dfn; text:element
+spec:dom; type:dfn; text:ID; for:Element
+spec:infra; type:dfn; text:list
+spec:infra; type:dfn; text:string
+spec:fetch; type:dfn; for:/; text:request
+spec:fetch; type:dfn; for:/; text:response
+</pre>
+
+<pre class=anchors>
+spec: html; urlPrefix: https://html.spec.whatwg.org/multipage/
+    urlPrefix: urls-and-fetching.html
+        type: dfn
+            text: valid non-empty URL potentially surrounded by spaces; url: #valid-non-empty-url-potentially-surrounded-by-spaces
+spec: dom; urlPrefix: https://dom.spec.whatwg.org/
+    type: dfn
+        text: valid attribute local name; url: #valid-attribute-local-name
+</pre>
+
+
+<h2 id=intro>Introduction</h2>
+
+*This section is non-normative.*
+
+Many pages show a list of records: rows in a table, items in a list, options in a menu. When the
+records live in a JSON file, authors today write script that fetches the file, copies a
+<{template}> element once for each record, and fills in the copies. The script is similar on every
+page, and nothing appears when script is turned off or fails to load.
+
+This specification lets authors declare the same thing in markup. The <{template/json}> attribute
+tells a template where its data is, the <{html-global/template}> attribute tells an element which
+template to render into itself, and the <{html-global/key}> attribute marks the elements in the
+template that receive data.
+
+<div class=example id=example-intro-table>
+    The file <code>./json/tableData.json</code> contains:
+
+    <xmp highlight=json>
+    [
+      { "city": "Seattle", "state": "Washington" },
+      { "city": "Portland", "state": "Oregon" },
+      { "city": "Boise", "state": "Idaho" }
+    ]
+    </xmp>
+
+    The page contains:
+
+    <xmp highlight=html>
+    <template id="tableRow" json="./json/tableData.json">
+      <tr><td key="city"></td><td key="state"></td></tr>
+    </template>
+
+    <table>
+      <thead>
+        <tr><th>City</th><th>State</th></tr>
+      </thead>
+      <tbody template="tableRow">
+        <tr><td colspan="2">Loading…</td></tr>
+      </tbody>
+    </table>
+    </xmp>
+
+    When the file loads, the user agent replaces the contents of the <{tbody}> element with three
+    rows. In each row, the <code>td</code> whose key is <code>city</code> holds that item's
+    <code>city</code>, and the one whose key is <code>state</code> holds its <code>state</code>:
+
+    <xmp highlight=html>
+    <tbody template="tableRow">
+      <tr><td key="city">Seattle</td><td key="state">Washington</td></tr>
+      <tr><td key="city">Portland</td><td key="state">Oregon</td></tr>
+      <tr><td key="city">Boise</td><td key="state">Idaho</td></tr>
+    </tbody>
+    </xmp>
+</div>
+
+<div class=example id=example-intro-attributes>
+    A property whose value is an object sets attributes too. Its <code>content</code> property
+    becomes the element's text, and every other property sets the attribute with that name.
+
+    <xmp highlight=json>
+    [
+      {
+        "city":  "Seattle",
+        "link":  { "href": "/wa/seattle", "content": "Details" },
+        "photo": { "src": "seattle.jpg", "alt": "Seattle skyline" }
+      }
+    ]
+    </xmp>
+
+    <xmp highlight=html>
+    <template id="cityRow" json="./json/cities.json">
+      <tr>
+        <td key="city"></td>
+        <td><a key="link"></a></td>
+        <td><img key="photo"></td>
+      </tr>
+    </template>
+
+    <table>
+      <tbody template="cityRow"></tbody>
+    </table>
+    </xmp>
+
+    renders:
+
+    <xmp highlight=html>
+    <tbody template="cityRow">
+      <tr>
+        <td key="city">Seattle</td>
+        <td><a key="link" href="/wa/seattle">Details</a></td>
+        <td><img key="photo" src="seattle.jpg" alt="Seattle skyline"></td>
+      </tr>
+    </tbody>
+    </xmp>
+</div>
+
+User agents that don't support this specification ignore all three attributes and keep showing the
+element's original contents, here the "Loading…" row. Authors can put a useful fallback there, such
+as a link to the data.
+
+Note: In HTML syntax, a <code>/</code> at the end of a start tag has no effect on elements that
+aren't void. <code>&lt;td key="city"/></code> is an ordinary start tag, and
+<code>&lt;tbody template="tableRow"/></code> doesn't end the <{tbody}> element. The examples in this
+specification use explicit end tags.
+
+
+<h2 id=the-json-attribute>The <code>json</code> attribute</h2>
+
+<h3 id=json-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for=template>json</dfn> content attribute can be specified on <{template}>
+elements. If present, its value must be a [=valid non-empty URL potentially surrounded by spaces=]
+that identifies a JSON resource.
+
+Each <{template}> element has a <dfn for=template>JSON data</dfn>, which is either null or a
+[=list=]. It is initially null.
+
+Each <{template}> element has a <dfn for=template>JSON fetch controller</dfn>, which is either null
+or a [=fetch controller=]. It is initially null.
+
+<h3 id=json-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+partial interface HTMLTemplateElement {
+  [CEReactions, ReflectURL] attribute USVString json;
+};
+</xmp>
+
+The <dfn attribute for=HTMLTemplateElement>json</dfn> IDL attribute must [=reflect=] the
+<{template/json}> content attribute, as a URL.
+
+<h3 id=loading-json-data>Loading the data</h3>
+
+When a <{template}> element [=becomes connected=] or becomes disconnected, and when its
+<{template/json}> attribute is set, changed, or removed, the user agent must [=update the JSON
+data=] of the element.
+
+<div algorithm>
+    To <dfn export>update the JSON data</dfn> of a <{template}> element |template|:
+
+    1. If |template|'s [=template/JSON fetch controller=] is not null, then [=fetch controller/abort=]
+        it, and set |template|'s [=template/JSON fetch controller=] to null.
+
+    1. Set |template|'s [=template/JSON data=] to null.
+
+    1. If |template| is not [=connected=], or it does not have a <{template/json}> attribute, then
+        return.
+
+    1. Let |url| be the result of [=encoding-parsing a URL=] given the value of |template|'s
+        <{template/json}> attribute, relative to |template|'s [=Node/node document=].
+
+    1. If |url| is failure, then [=queue an element task=] on the [=DOM manipulation task source=]
+        given |template| to [=fire an event=] named <code>error</code> at |template|, and return.
+
+    1. Let |request| be a new [=request=] whose [=request/URL=] is |url|, [=request/client=] is
+        |template|'s [=Node/node document=]'s [=relevant settings object=], [=request/destination=]
+        is "<code>json</code>", [=request/mode=] is "<code>cors</code>", and
+        [=request/credentials mode=] is "<code>same-origin</code>".
+
+    1. Set |template|'s [=template/JSON fetch controller=] to the result of [=fetching=] |request|,
+        with <i>[=fetch/processResponseConsumeBody=]</i> set to the following steps given a
+        [=response=] |response| and null, failure, or a [=byte sequence=] |bodyBytes|:
+
+        1. Set |template|'s [=template/JSON fetch controller=] to null.
+
+        1. If |response| is a [=network error=], or its [=response/status=] is not an
+            [=ok status=], or |bodyBytes| is null or failure, then [=fire an event=] named
+            <code>error</code> at |template|, and return.
+
+        1. Let |value| be the result of [=parse JSON bytes to an Infra value|parsing JSON bytes to
+            an Infra value=] given |bodyBytes|. If this throws an exception, then [=fire an event=]
+            named <code>error</code> at |template|, and return.
+
+        1. If |value| is a [=list=], then set |template|'s [=template/JSON data=] to |value|.
+            Otherwise, set it to « |value| ».
+
+        1. [=list/For each=] |host| of |template|'s [=template hosts=], [=render a template|render=]
+            |host|.
+
+        1. [=Fire an event=] named <code>load</code> at |template|.
+</div>
+
+Note: A template loads its data once, however many elements render it. Moving a template to another
+place in the document loads the data again.
+
+
+<h2 id=the-template-attribute>The <code>template</code> attribute</h2>
+
+<h3 id=template-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for=html-global>template</dfn> content attribute can be specified on any
+[=HTML element=]. If present, its value must be the [=Element/ID=] of a <{template}> element in the
+same [=tree=].
+
+The <dfn>referenced template</dfn> of an [=element=] |host| is found by these steps:
+
+1. If |host| does not have a <{html-global/template}> attribute, or its value is the empty string,
+    then return null.
+
+1. Let |candidate| be the first [=element=], in [=tree order=], among the [=descendants=] of
+    |host|'s [=tree/root=] whose [=Element/ID=] is the value of |host|'s <{html-global/template}>
+    attribute.
+
+1. If |candidate| is a <{template}> element, then return |candidate|. Otherwise, return null.
+
+The <dfn>template hosts</dfn> of a <{template}> element |template| are the [=elements=], in
+[=tree order=], among the [=descendants=] of |template|'s [=tree/root=] whose
+[=referenced template=] is |template|.
+
+<h3 id=template-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+partial interface HTMLElement {
+  [CEReactions, Reflect] attribute DOMString template;
+};
+</xmp>
+
+The <dfn attribute for=HTMLElement>template</dfn> IDL attribute must [=reflect=] the
+<{html-global/template}> content attribute.
+
+
+<h2 id=the-key-attribute>The <code>key</code> attribute</h2>
+
+<h3 id=key-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for=html-global>key</dfn> content attribute can be specified on any
+[=HTML element=]. Its value is any string. It marks an element in a template's
+[=template contents=] as the place where the item property with the same name is bound. Outside a
+template's contents, and in copies that have already been rendered, the attribute has no effect.
+
+Unlike IDs, keys don't need to be unique. Every element in a copy whose key matches a property
+receives that property's value.
+
+<h3 id=key-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+partial interface HTMLElement {
+  [CEReactions, Reflect] attribute DOMString key;
+};
+</xmp>
+
+The <dfn attribute for=HTMLElement>key</dfn> IDL attribute must [=reflect=] the
+<{html-global/key}> content attribute.
+
+<div class=example id=example-idl>
+    <xmp highlight=js>
+    const template = document.getElementById("tableRow");
+    const tbody = document.querySelector("tbody");
+
+    template.json;                              // "https://example.com/json/tableData.json"
+    tbody.template;                             // "tableRow"
+    template.content.querySelector("td").key;   // "city"
+
+    template.addEventListener("load", () => console.log("rows rendered"));
+    template.addEventListener("error", () => console.log("data failed to load"));
+
+    // Feature detection.
+    const supported = "json" in HTMLTemplateElement.prototype;
+    </xmp>
+</div>
+
+
+<h2 id=rendering>Rendering</h2>
+
+<h3 id=when-to-render>When to render</h3>
+
+The user agent must [=queue an element task=] on the [=DOM manipulation task source=] given an
+[=element=] |host| to [=render a template|render=] |host| when either of these happens:
+
+* |host| [=becomes connected=] while it has a <{html-global/template}> attribute; or
+* |host|'s <{html-global/template}> attribute is set or changed while |host| is [=connected=].
+
+When a <{template}> element's <code>id</code> attribute is set, changed, or removed while the
+element is [=connected=], the user agent must [=queue an element task=] on the
+[=DOM manipulation task source=] given the element to [=render a template|render=] each of its
+[=template hosts=].
+
+<h3 id=rendering-a-template>Rendering a template</h3>
+
+<div algorithm>
+    To <dfn export>render a template</dfn> into an [=element=] |host|:
+
+    1. Let |template| be |host|'s [=referenced template=].
+
+    1. If |template| is null, or |template|'s [=template/JSON data=] is null, then return.
+
+    1. If |host| has an [=ancestor=] whose <{html-global/template}> attribute has the same value as
+        |host|'s <{html-global/template}> attribute, then return.
+
+    1. Let |fragment| be a new {{DocumentFragment}} whose [=Node/node document=] is |host|'s
+        [=Node/node document=].
+
+    1. [=list/For each=] |item| of |template|'s [=template/JSON data=]:
+
+        1. If |item| is not an [=ordered map=], then [=iteration/continue=].
+
+        1. Let |clone| be the result of [=clone a node|cloning=] |template|'s [=template contents=],
+            with <i>document</i> set to |host|'s [=Node/node document=] and <i>subtree</i> set to
+            true.
+
+        1. Let |keyed| be a [=list=] of the [=elements=] among the [=descendants=] of |clone| that
+            have a <{html-global/key}> attribute, in [=tree order=].
+
+        1. [=list/For each=] |element| of |keyed|:
+
+            1. Let |key| be the value of |element|'s <{html-global/key}> attribute.
+
+            1. If |item|[|key|] [=map/exists=], then [=bind a value=] given |element| and
+                |item|[|key|].
+
+        1. [=Append=] |clone| to |fragment|.
+
+    1. [=Node/Replace all=] with |fragment| within |host|.
+</div>
+
+Note: The ancestor check stops a template that contains its own host from rendering forever. A
+template can contain hosts for other templates, and those render normally.
+
+<h3 id=binding-values>Binding values</h3>
+
+<div algorithm>
+    To <dfn>bind a value</dfn> given an [=element=] |element| and an Infra value |value|:
+
+    1. If |element| is a <{script}> element, or an [=element=] whose [=Element/local name=] is
+        <code>script</code> and whose [=Element/namespace=] is the [=SVG namespace=], then return.
+
+    1. If |value| is not an [=ordered map=], then [=bind text=] given |element| and |value|, and
+        return.
+
+    1. [=map/For each=] |name| → |propertyValue| of |value|:
+
+        1. If |name| is "<code>content</code>", then [=bind text=] given |element| and
+            |propertyValue|.
+
+        1. Otherwise, [=bind an attribute=] given |element|, |name|, and |propertyValue|.
+</div>
+
+<div algorithm>
+    To <dfn>bind text</dfn> given an [=element=] |element| and an Infra value |value|:
+
+    1. If |value| is a [=string=], then [=string replace all=] with |value| within |element|.
+
+    1. Otherwise, if |value| is a number, then [=string replace all=] with the result of
+        <a abstract-op>ToString</a>(|value|) within |element|.
+
+    1. Otherwise, if |value| is true or false, then [=string replace all=] with "<code>true</code>"
+        or "<code>false</code>" within |element|.
+
+    1. Otherwise, if |value| is null, then [=string replace all=] with the empty string within
+        |element|.
+
+    1. Otherwise, |value| is a [=list=] or an [=ordered map=]. Do nothing.
+</div>
+
+<div algorithm>
+    To <dfn>bind an attribute</dfn> given an [=element=] |element|, a [=string=] |name|, and an
+    Infra value |value|:
+
+    1. If |name| is not a [=valid attribute local name=], then return.
+
+    1. If |element| is an [=HTML element=] and its [=Node/node document=] is an [=HTML document=],
+        then set |name| to |name|, [=ASCII lowercased=].
+
+    1. If |name| [=string/starts with=] "<code>on</code>" or is "<code>srcdoc</code>", then return.
+
+    1. If |value| is false or null, then [=remove an attribute by name=] given |name| and |element|,
+        and return.
+
+    1. If |value| is a [=list=] or an [=ordered map=], then return.
+
+    1. Let |text| be |value| if |value| is a [=string=], the empty string if |value| is true, or the
+        result of <a abstract-op>ToString</a>(|value|) if |value| is a number.
+
+    1. If the result of running the [=basic URL parser=] on |text| is not failure, and its
+        [=url/scheme=] is "<code>javascript</code>", then return.
+
+    1. [=Set an attribute value=] given |element|, |name|, and |text|.
+</div>
+
+<div class=example id=example-binding-table>
+    How each value binds into <code>&lt;input key="field"></code>:
+
+    <table class=data>
+        <thead>
+            <tr><th>Value of <code>field</code><th>Result
+        <tbody>
+            <tr><td><code>"Seattle"</code><td>Text content <code>Seattle</code>
+            <tr><td><code>{ "value": "Seattle" }</code><td><code>value="Seattle"</code>
+            <tr><td><code>{ "maxlength": 3 }</code><td><code>maxlength="3"</code>
+            <tr><td><code>{ "required": true }</code><td><code>required=""</code>
+            <tr><td><code>{ "required": false }</code> or <code>{ "required": null }</code><td>No
+                <code>required</code> attribute
+            <tr><td><code>{ "aria-invalid": "false" }</code><td><code>aria-invalid="false"</code>
+            <tr><td><code>{ "onclick": "…" }</code><td>Ignored
+            <tr><td><code>{ "formaction": "javascript:…" }</code><td>Ignored
+    </table>
+</div>
+
+Note: <code>true</code> and <code>false</code> map to the presence and absence of an attribute, which
+suits boolean attributes such as <code>required</code>, <code>checked</code>, and
+<code>selected</code>. Attributes that take the strings <code>"true"</code> and <code>"false"</code>,
+such as <code>aria-invalid</code>, need string values.
+
+Note: Values are inserted as text. A value such as <code>"&lt;b>Seattle&lt;/b>"</code> appears as
+those characters, and is never parsed as markup.
+
+
+<h2 id=other-features>Interaction with other features</h2>
+
+*This section is non-normative.*
+
+: Fallback content
+:: The host's original children stay in place until the data loads. They also stay if the data
+    fails to load, and in user agents without support.
+: Keys in the copies
+:: Copies keep their <{html-global/key}> attributes, so authors can select and style them, for
+    example with <code>[key="city"]</code>.
+: IDs in the template
+:: <code>id</code> attributes are copied unchanged. A template rendered more than once should not
+    contain IDs, or the page will have duplicates.
+: Missing properties
+:: If an item has no property for a key, that element keeps whatever the template gave it, such as
+    placeholder text or default attributes.
+: Keyed elements inside keyed elements
+:: Binding <code>content</code> to an element replaces its children, including any keyed elements
+    inside it.
+: Several hosts
+:: Any number of elements can name the same template. They share one request, and each gets its own
+    copies.
+: Order in the document
+:: A host can come before or after its template. Hosts render when the data arrives, and hosts added
+    later render as soon as they are connected.
+: Tables and selects
+:: <{template}> elements are allowed inside <{table}> and <{select}> elements, and the parser keeps
+    <code>tr</code>, <code>td</code>, and <code>option</code> elements in a template's contents, so
+    rows and options can be templated directly.
+: Form controls
+:: Copies are new elements, so binding <code>value</code>, <code>checked</code>, or
+    <code>selected</code> sets what the control shows.
+: Custom elements
+:: Custom elements in the copies are upgraded when the copies are inserted, as with any other
+    inserted content.
+: Script
+:: The <code>load</code> and <code>error</code> events on the template tell scripts when rendering
+    finishes or fails. After rendering, the copies are ordinary DOM that scripts can change.
+
+
+<h2 id=changes-to-html>Changes to the HTML Standard</h2>
+
+To integrate this specification into the HTML Standard [[!HTML]], make these changes:
+
+1. In <a href="https://html.spec.whatwg.org/multipage/scripting.html#the-template-element">the
+    <code>template</code> element</a>:
+    * Add <{template/json}> to the element's content attributes.
+    * Add the <code>json</code> IDL attribute to the {{HTMLTemplateElement}} interface.
+    * Add the [=template/JSON data=] and [=template/JSON fetch controller=] concepts, and the
+        [=update the JSON data=] algorithm and the conditions that run it.
+1. In <a href="https://html.spec.whatwg.org/multipage/dom.html#global-attributes">global
+    attributes</a>, add <{html-global/template}> and <{html-global/key}>, and add the
+    <code>template</code> and <code>key</code> IDL attributes to the {{HTMLElement}} interface.
+1. Add [[#template-content-attribute]], [[#key-content-attribute]], and [[#rendering]] as a new
+    subsection after the <code>template</code> element.
+1. In the index of element attributes, add these rows:
+    * attribute <code>json</code>; element <code>template</code>; description "JSON data to render
+        the template with"; value "Valid non-empty URL potentially surrounded by spaces".
+    * attribute <code>template</code>; elements "HTML elements"; description "Template to render
+        into the element"; value "ID of a <code>template</code> element".
+    * attribute <code>key</code>; elements "HTML elements"; description "Name of the data property
+        bound to the element"; value "Text".
+1. In the index of events, add <code>load</code> and <code>error</code> as fired at
+    <code>template</code> elements.
+
+
+<h2 id=a11y>Accessibility considerations</h2>
+
+Rendered content is ordinary DOM, so assistive technologies see the same table rows, list items, or
+options that any other page would have.
+
+Because attributes can be bound, data can and should supply accessible names and descriptions, such
+as <code>alt</code> for images and <code>aria-label</code> for icon-only links. Templates should
+give these attributes a sensible default in case the data leaves them out.
+
+Rendering replaces the host's contents after the page has loaded, and assistive technologies might
+not announce the change. Authors can set <code>aria-busy="true"</code> on the host and remove it in
+a <code>load</code> event listener, or describe the loading state in the fallback content.
+
+Fallback content should make sense on its own, because some users will only ever see it.
+
+
+<h2 id=security-privacy>Security and privacy considerations</h2>
+
+JSON data can come from a different party than the page, such as a third-party API or content that
+users submitted. Binding is designed so that data can fill in a template but cannot add behavior to
+it:
+
+* Text values are inserted as text and never parsed as markup.
+* Data can't create elements. It can only change elements the author put in the template.
+* Event handler attributes, whose names start with <code>on</code>, are ignored.
+* <code>srcdoc</code> is ignored, because it would put markup from the data into an
+    <{iframe}> with the page's origin.
+* Values that are <code>javascript:</code> URLs are ignored for every attribute, so data can't
+    turn a link, form action, or frame into script.
+* <{script}> elements, in HTML and SVG, never receive values, so data can't set a script's source
+    or text.
+
+Some risks remain, and authors should consider them before binding data they don't control:
+
+* A bound <code>style</code> attribute, or text bound into a <code>style</code> element, can change
+    how the page looks, and CSS can be used to leak information.
+* A bound <code>href</code> or <code>src</code> can point anywhere other than a
+    <code>javascript:</code> URL, including tracking pixels and phishing pages.
+
+Loading the data:
+
+* The request uses CORS. A cross-origin resource must opt in with
+    <code>Access-Control-Allow-Origin</code>, and credentials are sent only to the page's own
+    origin. The page learns nothing that <code>fetch()</code> couldn't already tell it.
+* The request happens without script, like an image or a stylesheet. It reveals no more about the
+    user than those requests do.
+* The request is subject to Content Security Policy like any other fetch. See
+    [[#open-issues]] for which directive applies.
+
+
+<h2 id=more-examples>More examples</h2>
+
+*This section is non-normative.*
+
+<div class=example id=example-list>
+    A team list with links and photos, and a fallback link for user agents without support.
+
+    <xmp highlight=html>
+    <template id="person" json="/team.json">
+      <li>
+        <img key="photo" src="/avatar.png" alt="">
+        <a key="name"></a>, <span key="role"></span>
+      </li>
+    </template>
+
+    <ul template="person">
+      <li><a href="/team.json">View the team</a></li>
+    </ul>
+    </xmp>
+
+    <xmp highlight=json>
+    [
+      {
+        "photo": { "src": "/ana.jpg", "alt": "Ana" },
+        "name": { "href": "/team/ana", "content": "Ana" },
+        "role": "Designer"
+      }
+    ]
+    </xmp>
+
+    The list becomes:
+
+    <xmp highlight=html>
+    <li>
+      <img key="photo" src="/ana.jpg" alt="Ana">
+      <a key="name" href="/team/ana">Ana</a>, <span key="role">Designer</span>
+    </li>
+    </xmp>
+</div>
+
+<div class=example id=example-select>
+    Options for a <{select}> element, with a value that differs from the label, and one option
+    selected.
+
+    <xmp highlight=html>
+    <template id="stateOption" json="/states.json">
+      <option key="state"></option>
+    </template>
+
+    <label>State
+      <select name="state" template="stateOption">
+        <option>Loading…</option>
+      </select>
+    </label>
+    </xmp>
+
+    <xmp highlight=json>
+    [
+      { "state": { "value": "OR", "content": "Oregon" } },
+      { "state": { "value": "WA", "content": "Washington", "selected": true } }
+    ]
+    </xmp>
+</div>
+
+<div class=example id=example-shared>
+    Two hosts share one template, and so one request. A single object, rather than an array, renders
+    once.
+
+    <xmp highlight=html>
+    <template id="summary" json="/stats.json">
+      <span key="count"></span> cities
+    </template>
+
+    <p template="summary">…</p>
+    <footer template="summary">…</footer>
+    </xmp>
+
+    With <code>{"count": 3}</code>, both elements show "3 cities".
+</div>
+
+
+<h2 id=alternate-proposals>Alternate proposals</h2>
+
+*This section is non-normative.*
+
+<h3 id=alt-array-of-bindings>Array of bindings (rejected)</h3>
+
+**Status: rejected.** Each item would be an array of binding objects, each naming its element with a
+<code>key</code> property, instead of a map from keys to values:
+
+<xmp highlight=json>
+[
+  [
+    { "key": "city",  "content": "Seattle" },
+    { "key": "link",  "href": "/wa/seattle", "content": "Details" },
+    { "key": "photo", "src": "seattle.jpg", "alt": "Seattle skyline" }
+  ],
+  [
+    { "key": "city",  "content": "Portland" },
+    { "key": "link",  "href": "/or/portland", "content": "Details" },
+    { "key": "photo", "src": "portland.jpg", "alt": "Portland bridges" }
+  ]
+]
+</xmp>
+
+It renders the same rows as the <a href="#example-intro-attributes">second introduction example</a>, but it was rejected because:
+
+* Every value needs a wrapper object, even plain text, so the data is longer.
+* The same key can appear twice in one row, so the specification would need a rule for which
+    binding wins.
+* <code>key</code> becomes a reserved property name, so data couldn't set a <code>key</code>
+    attribute.
+* Data from APIs and spreadsheets is usually already a list of objects, so it would need converting
+    first.
+
+<h3 id=alt-script>Script</h3>
+
+Authors can already fetch the JSON, clone the template, and fill in the copies with script. It
+takes a dozen lines, has to be repeated or packaged for each page, and shows nothing when script is
+turned off or fails.
+
+<h3 id=alt-template-instantiation>Template instantiation and DOM Parts</h3>
+
+The Web Components community has discussed template instantiation and DOM Parts: script APIs that
+mark the parts of a template that change and update them efficiently. Those proposals serve
+frameworks that update the page many times. This specification covers the simpler case of rendering
+static data once, without script, and could later be built on top of DOM Parts.
+
+<h3 id=alt-src>A <code>src</code> attribute</h3>
+
+The template could use <code>src</code> instead of <code>json</code>. The name <code>json</code>
+makes the expected format clear, and leaves room for other formats later.
+
+
+<h2 id=open-issues>Open issues</h2>
+
+Issue: <strong>The <code>content</code> property.</strong> Because <code>content</code> means the
+element's text, data can't set a <code>content</code> attribute, such as the one on
+<code>meta</code> elements. Should the text use a name that can't be an attribute, such as
+<code>#text</code>?
+
+Issue: <strong>Attribute guards.</strong> Is a fixed list of ignored attributes and values enough,
+or should binding integrate with Trusted Types and the HTML Sanitizer API's configuration?
+
+Issue: <strong>Nested data.</strong> A property whose value is an array is ignored. Should a host
+inside a template render that array, for example the list of cities inside each state?
+
+Issue: <strong>Part of the resource.</strong> Should authors be able to render part of the JSON,
+such as the <code>cities</code> property of the top-level object?
+
+Issue: <strong>Refreshing and script-supplied data.</strong> Should there be a way to load the data
+again, such as a <code>reload()</code> method, or to give a template data from script?
+
+Issue: <strong>Load event.</strong> Should loading the data delay the document's <code>load</code>
+event, as images do?
+
+Issue: <strong>Content Security Policy.</strong> Which directive governs these requests?
+<code>connect-src</code> matches <code>fetch()</code>.
+
+Issue: <strong>Attribute names.</strong> Are <code>template</code> and <code>key</code> safe as new
+global attributes and {{HTMLElement}} properties, given that some libraries and custom elements
+already use properties with those names?

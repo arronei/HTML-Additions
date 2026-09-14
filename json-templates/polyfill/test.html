@@ -1,0 +1,170 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>json, template, and key attributes polyfill: tests</title>
+<script src="json-templates.js"></script>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+
+  async function test(name, body) {
+    document.getElementById('fixture')?.remove();
+    try {
+      await body();
+      log.textContent += `PASS  ${name}\n`;
+    } catch (error) {
+      failed++;
+      log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+    }
+  }
+
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+
+  function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    return (selector) => container.querySelector(selector);
+  }
+
+  // data: URLs let the tests run from file:// without a server.
+  const dataUrl = (value) => 'data:application/json,' + encodeURIComponent(typeof value === 'string' ? value : JSON.stringify(value));
+
+  // Resolves on the template's load event, rejects on error (or the reverse when expectError is set).
+  const settled = (template, expectError = false) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out')), 3000);
+    template.addEventListener('load', () => { clearTimeout(timer); (expectError ? reject : resolve)(new Error('load fired')); }, { once: true });
+    template.addEventListener('error', () => { clearTimeout(timer); (expectError ? resolve : reject)(new Error('error fired')); }, { once: true });
+  });
+  const tick = () => new Promise((resolve) => setTimeout(resolve));
+  const cells = (element) => [...element.querySelectorAll('tr')].map((tr) => [...tr.cells].map((td) => td.textContent));
+
+  (async () => {
+    await test('json, template, and key reflect their attributes', () => {
+      const $ = fixture('<template json="data/rows.json"></template><p template="row" key="city"></p>');
+      assertEqual($('p').key, 'city', 'key getter');
+      assertEqual($('template').json, new URL('data/rows.json', document.baseURI).href, 'json resolves as a URL');
+      assertEqual($('p').template, 'row', 'template getter');
+      $('p').template = 'other';
+      assertEqual($('p').getAttribute('template'), 'other', 'template setter');
+      assertEqual(document.createElement('template').json, '', 'missing attribute');
+    });
+
+    await test('the intro example: one row per item, bound by key, keys kept, fallback replaced', async () => {
+      const rows = [{ city: 'Seattle', state: 'Washington' }, { city: 'Portland', state: 'Oregon' }];
+      const $ = fixture(`
+        <template id="tableRow" json="${dataUrl(rows)}"><tr><td key="city"></td><td key="state"></td></tr></template>
+        <table><tbody template="tableRow"><tr><td>Loading…</td></tr></tbody></table>`);
+      assertEqual(cells($('tbody')), [['Loading…']], 'fallback before load');
+      await settled($('template'));
+      assertEqual(cells($('tbody')), [['Seattle', 'Washington'], ['Portland', 'Oregon']], 'rows');
+      assertEqual($('tbody').querySelectorAll('[key="city"]').length, 2, 'copies keep their keys');
+    });
+
+    await test('value types, missing keys, single objects, and non-object items', async () => {
+      const $ = fixture(`
+        <template id="t" json="${dataUrl([{ a: 3, b: true, c: null, d: [1], e: '<b>x</b>' }, 'skipped', null, [1]])}">
+          <tr><td key="a"></td><td key="b"></td><td key="c">c</td><td key="d">d</td><td key="e"></td><td key="missing">keep</td></tr>
+        </template>
+        <template id="one" json="${dataUrl({ a: 'only' })}"><tr><td key="a"></td><td key="a"></td></tr></template>
+        <table><tbody id="many" template="t"></tbody><tbody id="single" template="one"></tbody></table>`);
+      await Promise.all([settled($('#t')), settled($('#one'))]);
+      assertEqual(cells($('#many')), [['3', 'true', '', 'd', '<b>x</b>', 'keep']], 'converted values');
+      assertEqual($('#many').querySelector('b'), null, 'values are text, not markup');
+      assertEqual(cells($('#single')), [['only', 'only']], 'a single object renders once; repeated keys all bind');
+    });
+
+    await test('hosts before the template, shared hosts, and hosts added after load', async () => {
+      const $ = fixture(`
+        <p id="before" template="s">…</p>
+        <template id="s" json="${dataUrl({ n: 3 })}"><span key="n"></span> cities</template>
+        <p id="after" template="s">…</p>`);
+      await settled($('template'));
+      assertEqual([$('#before').textContent, $('#after').textContent], ['3 cities', '3 cities'], 'both hosts');
+      const late = document.createElement('p');
+      late.setAttribute('template', 's');
+      $('#after').after(late);
+      await tick();
+      assertEqual(late.textContent, '3 cities', 'late host');
+    });
+
+    await test('object values set content and attributes; true, false, and null map to presence', async () => {
+      const row = {
+        link: { href: '/wa/seattle', content: 'Details', TITLE: 'Seattle' },
+        photo: { src: 'seattle.jpg', alt: 'Skyline' },
+        field: { value: 'WA', maxlength: 2, required: true, disabled: false, placeholder: null, list: ['x'] },
+      };
+      const $ = fixture(`
+        <template id="t" json="${dataUrl([row])}">
+          <a key="link"></a><img key="photo" src="default.png"><input key="field" disabled placeholder="p">
+        </template>
+        <div template="t"></div>`);
+      await settled($('template'));
+      const attrs = (el) => Object.fromEntries([...el.attributes].map((a) => [a.name, a.value]));
+      assertEqual([attrs($('a')), $('a').textContent], [{ key: 'link', href: '/wa/seattle', title: 'Seattle' }, 'Details'], 'link');
+      assertEqual(attrs($('img')), { key: 'photo', src: 'seattle.jpg', alt: 'Skyline' }, 'image');
+      assertEqual(attrs($('input')), { key: 'field', value: 'WA', maxlength: '2', required: '' }, 'input');
+    });
+
+    await test('guards: event handlers, srcdoc, javascript: URLs, and scripts receive nothing', async () => {
+      window.pwned = false;
+      const row = {
+        link: { onclick: 'pwned = true', href: ' JavaScript:pwned = true', title: 'ok' },
+        frame: { srcdoc: '<script>parent.pwned = true<\/script>', title: 'frame' },
+        s: { src: 'data:text/javascript,pwned=true', content: 'pwned = true' },
+        bad: { 'not valid': 'x', content: 'fine' },
+      };
+      const $ = fixture(`
+        <template id="t" json="${dataUrl([row])}">
+          <a key="link" href="/safe"></a><iframe key="frame"></iframe><script key="s"><\/script><svg><script key="s"><\/script></svg><b key="bad"></b>
+        </template>
+        <div template="t"></div>`);
+      await settled($('template'));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const a = $('a');
+      assertEqual([a.getAttribute('onclick'), a.getAttribute('href'), a.title], [null, '/safe', 'ok'], 'link');
+      assertEqual([$('iframe').hasAttribute('srcdoc'), $('iframe').title], [false, 'frame'], 'iframe');
+      assertEqual([...$('div').querySelectorAll('script')].map((s) => [s.hasAttribute('src'), s.textContent]), [[false, ''], [false, '']], 'scripts');
+      assertEqual($('b').textContent, 'fine', 'invalid attribute name skipped');
+      assertEqual(window.pwned, false, 'nothing ran');
+    });
+
+    await test('invalid JSON fires error and keeps the fallback', async () => {
+      const $ = fixture(`<template id="bad" json="${dataUrl('{')}"><b key="x"></b></template><p template="bad">fallback</p>`);
+      await settled($('template'), true);
+      assertEqual($('p').textContent, 'fallback', 'fallback kept');
+    });
+
+    await test('changing json reloads; changing a host\'s template re-renders', async () => {
+      const $ = fixture(`
+        <template id="a" json="${dataUrl({ v: 'one' })}"><i key="v"></i></template>
+        <template id="b" json="${dataUrl({ v: 'B' })}"><u key="v"></u></template>
+        <p template="a"></p>`);
+      await Promise.all([settled($('#a')), settled($('#b'))]);
+      assertEqual($('p').innerHTML, '<i key="v">one</i>', 'first render');
+      const reloaded = settled($('#a'));
+      $('#a').json = dataUrl({ v: 'two' });
+      await reloaded;
+      assertEqual($('p').innerHTML, '<i key="v">two</i>', 'after json changed');
+      $('p').template = 'b';
+      await tick();
+      assertEqual($('p').innerHTML, '<u key="v">B</u>', 'after template changed');
+    });
+
+    await test('a template that contains its own host does not render forever', async () => {
+      const $ = fixture(`<template id="loop" json="${dataUrl([{ x: 1 }])}"><div><b key="x"></b><div template="loop">inner</div></div></template><section template="loop"></section>`);
+      await settled($('template'));
+      await tick();
+      assertEqual($('section').innerHTML, '<div><b key="x">1</b><div template="loop">inner</div></div>', 'nested host left alone');
+    });
+
+    log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+    document.title = failed ? 'FAIL' : 'PASS';
+  })();
+</script>

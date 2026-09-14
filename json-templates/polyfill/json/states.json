@@ -1,0 +1,5 @@
+[
+  { "state": { "value": "ID", "content": "Idaho" } },
+  { "state": { "value": "OR", "content": "Oregon" } },
+  { "state": { "value": "WA", "content": "Washington", "selected": true } }
+]

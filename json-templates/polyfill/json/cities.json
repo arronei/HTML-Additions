@@ -1,0 +1,5 @@
+[
+  { "city": { "href": "https://en.wikipedia.org/wiki/Seattle", "content": "Seattle" }, "state": "Washington" },
+  { "city": { "href": "https://en.wikipedia.org/wiki/Portland,_Oregon", "content": "Portland" }, "state": "Oregon" },
+  { "city": { "href": "https://en.wikipedia.org/wiki/Boise,_Idaho", "content": "Boise" }, "state": "Idaho" }
+]

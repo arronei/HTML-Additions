@@ -1,0 +1,224 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>chart element polyfill: tests</title>
+<script src="chart-element.js"></script>
+<style>
+  body { font: 16px/1.2 sans-serif; }
+  #fixture chart { inline-size: 400px; }
+</style>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+
+  async function test(name, body) {
+    document.getElementById('fixture')?.remove();
+    try {
+      await body();
+      log.textContent += `PASS  ${name}\n`;
+    } catch (error) {
+      failed++;
+      log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+    }
+  }
+
+  function assert(condition, label) {
+    if (!condition) throw new Error(label);
+  }
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+  const near = (a, b, label) => assert(Math.abs(a - b) < 1.5, `${label}: expected ${b}, got ${a}`);
+
+  // Rendering runs in a microtask after each change, so waiting a task is enough.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+  async function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    await tick();
+    return (selector) => container.querySelector(selector);
+  }
+  const box = (element) => element.getBoundingClientRect();
+  const isDrawn = (element) => element.getClientRects().length > 0;
+  const key = (element, name) => element.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+
+  const twoSeries = `
+    <chart type="bar" style="row-gap: 0; column-gap: 0">
+      <series name="2025"><data id="a1" value="10">Q1</data><data id="a2" value="20">Q2</data></series>
+      <series name="2026"><data id="b1" value="5">Q1</data><data id="b2" value="15">Q2</data></series>
+      <legend></legend>
+    </chart>`;
+
+  (async () => {
+    await test('IDL attributes reflect, with bar and category as the defaults', async () => {
+      const $ = await fixture('<chart type="PIE"><series name="s"></series><axis type="nope"></axis></chart><chart></chart>');
+      assertEqual($('chart').type, 'pie', 'case-insensitive keyword');
+      assertEqual($('chart:last-of-type').type, 'bar', 'missing type');
+      $('chart').type = 'donut';
+      await tick();
+      assertEqual($('chart').type, 'bar', 'invalid type');
+      assertEqual($('chart').stacked, false, 'stacked');
+      $('chart').stacked = true;
+      assertEqual($('chart').hasAttribute('stacked'), true, 'stacked setter');
+      assertEqual($('series').name, 's', 'series name');
+      assertEqual($('axis').type, 'category', 'invalid axis type');
+    });
+
+    await test('bars sit side by side in each category, with lengths proportional to their values', async () => {
+      const $ = await fixture(twoSeries);
+      const [a1, a2, b1, b2] = ['#a1', '#a2', '#b1', '#b2'].map((s) => box($(s)));
+      near(a1.width, b1.width, 'equal slots');
+      near(a1.right, b1.left, 'series 2 follows series 1 with no column gap');
+      assert(a2.left >= b1.right - 0.5, 'category 2 follows category 1');
+      near(a2.height, 2 * a1.height, '20 is twice as long as 10');
+      near(a1.bottom, b1.bottom, 'bars share the zero baseline');
+    });
+
+    await test('gap separates categories (row-gap) and series (column-gap)', async () => {
+      const $ = await fixture(twoSeries.replace('row-gap: 0; column-gap: 0', 'row-gap: 50%; column-gap: 10px'));
+      near(box($('#b1')).left - box($('#a1')).right, 10, 'column-gap between series');
+      const pitch = box($('#a2')).left - box($('#a1')).left;
+      near(box($('#a2')).left - box($('#b1')).right, pitch / 2, 'row-gap is half the pitch');
+    });
+
+    await test('stacked bars start where the previous series ended', async () => {
+      const $ = await fixture(twoSeries.replace('type="bar"', 'type="bar" stacked'));
+      near(box($('#b1')).bottom, box($('#a1')).top, 'Q1 stacks');
+      near(box($('#b1')).width, box($('#a1')).width, 'one bar per category');
+      near(box($('#b1')).height, box($('#a1')).height / 2, '5 is half of 10');
+    });
+
+    await test('horizontal bars grow along the inline axis', async () => {
+      const $ = await fixture(twoSeries.replace('type="bar"', 'type="bar" horizontal'));
+      near(box($('#a2')).width, 2 * box($('#a1')).width, 'widths proportional');
+      near(box($('#a1')).left, box($('#b1')).left, 'shared baseline');
+      assert(box($('#a2')).top > box($('#a1')).top, 'categories run down');
+    });
+
+    await test('missing, unparseable, and duplicate points are not drawn', async () => {
+      const $ = await fixture(`
+        <chart type="bar">
+          <data id="ok" value=" 7.5e0px">A</data>
+          <data id="empty" value="">B</data>
+          <data id="junk" value="abc">C</data>
+          <data id="dup" value="3">A</data>
+        </chart>`);
+      assert(isDrawn($('#ok')), 'leading whitespace and trailing text are allowed');
+      assert(!isDrawn($('#empty')) && !isDrawn($('#junk')), 'missing values');
+      assert(!isDrawn($('#dup')), 'only the first point for a category');
+      assertEqual([...$('chart').querySelectorAll('.chart-polyfill-tick')].slice(-3).map((t) => t.textContent), ['A', 'B', 'C'], 'categories keep gaps');
+    });
+
+    await test('points directly in the chart are ignored when it has series', async () => {
+      const $ = await fixture('<chart><data id="loose" value="1">X</data><series><data id="kept" value="1">X</data></series></chart>');
+      assert(!isDrawn($('#loose')), 'loose point hidden');
+      assert(isDrawn($('#kept')), 'series point drawn');
+    });
+
+    await test('a pie draws only the first series and skips zero and negative values', async () => {
+      const $ = await fixture(`
+        <chart type="pie">
+          <series><data id="p1" value="3">A</data><data id="p2" value="1">B</data><data id="zero" value="0">C</data><data id="neg" value="-2">D</data></series>
+          <series><data id="other" value="5">A</data></series>
+          <legend><b>fallback</b></legend>
+        </chart>`);
+      assert(!isDrawn($('#zero')) && !isDrawn($('#neg')) && !isDrawn($('#other')), 'hidden');
+      assertEqual(box($('#p1')).width, box($('#p2')).width, 'wedges share the square');
+      assert(getComputedStyle($('#p1')).clipPath.startsWith('polygon'), 'clipped to a wedge');
+      assertEqual([...$('legend').querySelectorAll('.chart-polyfill-legend-entry')].map((e) => e.textContent), ['A', 'B'], 'one entry per drawn point');
+      assert(!isDrawn($('legend b')), 'legend children are not rendered');
+      const p1 = box($('#p1'));
+      // Clockwise from the top: A's wedge covers three quarters, ending at 9 o'clock; B's covers the top-left quarter.
+      assertEqual(document.elementFromPoint(p1.left + p1.width * 0.7, p1.top + p1.height * 0.3)?.id, 'p1', 'hit testing follows the wedge');
+      assertEqual(document.elementFromPoint(p1.left + p1.width * 0.3, p1.top + p1.height * 0.3)?.id, 'p2', 'second wedge');
+    });
+
+    await test('the legend lists named series with their colors', async () => {
+      const $ = await fixture(twoSeries.replace('<series name="2026">', '<series name="2026" style="color: rgb(1, 2, 3)">') + '<chart><series><data value="1">x</data></series><legend></legend></chart>');
+      const entries = [...$('legend').querySelectorAll('.chart-polyfill-legend-entry')];
+      assertEqual(entries.map((e) => e.textContent), ['2025', '2026'], 'entries');
+      assertEqual(entries[1].firstChild.style.background, 'rgb(1, 2, 3)', 'swatch color');
+      assertEqual(document.querySelectorAll('#fixture chart:last-child .chart-polyfill-legend-entry').length, 0, 'unnamed series has no entry');
+    });
+
+    await test('author geometry is ignored, paint styles apply, and text is hidden by default', async () => {
+      const $ = await fixture(`<style>#fixture data { width: 999px; margin: 50px; position: static; background: rgb(9, 9, 9); }</style>${twoSeries}`);
+      assert(box($('#a1')).width < 200, 'width ignored');
+      assertEqual(getComputedStyle($('#a1')).backgroundColor, 'rgb(9, 9, 9)', 'background applies');
+      assertEqual(getComputedStyle($('#a1')).contentVisibility, 'hidden', 'content hidden');
+    });
+
+    await test('line markers keep their size, and each series draws one path per run of values', async () => {
+      const $ = await fixture(`
+        <chart type="line">
+          <data id="m" value="1">A</data><data value="2">B</data><data value="">C</data><data value="3">D</data><data value="2">E</data>
+        </chart>`);
+      near(box($('#m')).width, 8, '0.5em marker');
+      const paths = [...$('chart').querySelectorAll('svg path')];
+      assertEqual(paths.length, 2, 'the line breaks at the missing value');
+      assertEqual(getComputedStyle(paths[0]).stroke, 'rgb(42, 120, 214)', 'implied series uses the chart stroke');
+    });
+
+    await test('stacked area bands run from the series baseline to its top', async () => {
+      const $ = await fixture(`
+        <chart type="area" stacked>
+          <series><data id="low" value="2">A</data><data value="2">B</data></series>
+          <series><data id="high" value="2">A</data><data value="2">B</data></series>
+        </chart>`);
+      near(box($('#high')).bottom, box($('#low')).top, 'stacked');
+      assertEqual($('chart').querySelectorAll('svg path').length, 4, 'a fill and a line for each series');
+    });
+
+    await test('accessibility roles and names', async () => {
+      const $ = await fixture(twoSeries.replace('<series name="2025">', '<figcaption>Revenue</figcaption><series name="2025">'));
+      assertEqual($('chart').getAttribute('role'), 'graphics-document', 'chart role');
+      assertEqual(document.getElementById($('chart').getAttribute('aria-labelledby')).textContent, 'Revenue', 'labelled by caption');
+      assertEqual($('#b2').getAttribute('aria-label'), '2026, Q2, 15', 'point name');
+      assertEqual($('#b2').getAttribute('role'), 'graphics-symbol', 'point role');
+    });
+
+    await test('the chart is one tab stop and arrow keys move between points', async () => {
+      const $ = await fixture(twoSeries);
+      assertEqual([...$('chart').querySelectorAll('[tabindex="0"]')].map((e) => e.id), ['a1'], 'one tab stop');
+      $('#a1').focus();
+      key($('#a1'), 'ArrowRight');
+      assertEqual(document.activeElement.id, 'a2', 'next category');
+      key(document.activeElement, 'ArrowDown');
+      assertEqual(document.activeElement.id, 'b2', 'next series');
+      key(document.activeElement, 'ArrowDown');
+      assertEqual(document.activeElement.id, 'b2', 'no further series');
+      key(document.activeElement, 'Home');
+      assertEqual(document.activeElement.id, 'b1', 'home');
+      await tick();
+      assertEqual([...$('chart').querySelectorAll('[tabindex="0"]')].map((e) => e.id), ['b1'], 'the active point is the tab stop');
+    });
+
+    await test('dynamic changes redraw, and focus moves off a point that stops being drawn', async () => {
+      const $ = await fixture(twoSeries);
+      const point = document.createElement('data');
+      point.value = '30';
+      point.textContent = 'Q3';
+      $('series').append(point);
+      await tick();
+      assert(isDrawn(point), 'added point drawn');
+      $('#a2').focus();
+      $('#a2').value = '';
+      await tick();
+      assert(!isDrawn($('#a2')), 'emptied point hidden');
+      assertEqual(document.activeElement.localName, 'data', 'focus stays in the chart');
+      $('chart').type = 'pie';
+      await tick();
+      assert(getComputedStyle($('#a1')).clipPath.startsWith('polygon'), 'type change redraws');
+      $('chart').remove();
+      assertEqual($('#a1'), null, 'removed');
+    });
+
+    log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+    document.title = failed ? 'FAIL' : 'PASS';
+  })();
+</script>

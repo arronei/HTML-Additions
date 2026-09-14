@@ -1,0 +1,1003 @@
+<pre class=metadata>
+Title: The Chart Element
+Shortname: chart-element
+Level: none
+Status: LD
+ED: https://arronei.github.io/HTML-Additions/chart-element/spec/
+Repository: arronei/HTML-Additions
+Editor: Arron Eicholz
+Abstract: This specification extends HTML with a <code>chart</code> element that draws a pie, line,
+    bar, or area chart from the <code>data</code> elements inside it. Each <code>data</code> element
+    is a point: its text is the point's name and its <code>value</code> attribute is the number. A
+    <code>series</code> element groups points, an <code>axis</code> element names an axis, a
+    <code>figcaption</code> element gives the chart a title, and a <code>legend</code> element adds
+    a key. The user agent lays the chart out itself. Each <code>data</code> element's box is the
+    mark it draws, such as a bar or a pie wedge, so authors style marks with CSS and handle events
+    on them like any other element.
+Markup Shorthands: markdown yes, css no
+Complain About: accidental-2119 no, missing-example-ids yes
+Assume Explicit For: yes
+</pre>
+
+<pre class=link-defaults>
+spec:html; type:element; text:data
+spec:html; type:element; text:figcaption
+spec:html; type:element; text:figure
+spec:html; type:element; text:legend
+spec:html; type:element; text:fieldset
+spec:html; type:element; text:table
+spec:html; type:element; text:caption
+spec:html; type:element; text:template
+</pre>
+
+<pre class=anchors>
+spec: html; urlPrefix: https://html.spec.whatwg.org/multipage/
+    urlPrefix: dom.html
+        type: dfn
+            text: flow content; url: #flow-content-2
+            text: palpable content; url: #palpable-content-2
+            text: represents; url: #represents
+    urlPrefix: common-microsyntaxes.html
+        type: dfn
+            text: boolean attribute; url: #boolean-attribute
+            text: enumerated attribute; url: #enumerated-attribute
+            text: missing value default; url: #missing-value-default
+            text: invalid value default; url: #invalid-value-default
+            text: rules for parsing floating-point number values; url: #rules-for-parsing-floating-point-number-values
+    urlPrefix: interaction.html
+        type: dfn
+            text: sequential focus navigation order; url: #sequential-focus-navigation-order
+            text: focusing steps; url: #focusing-steps
+    urlPrefix: text-level-semantics.html
+        type: element-attr
+            for: data
+                text: value; url: #attr-data-value
+</pre>
+
+
+<h2 id=intro>Introduction</h2>
+
+*This section is non-normative.*
+
+Simple charts are one of the most common things pages show, and one of the few that HTML can't
+express. Today an author has to pick a charting library, or draw an SVG image by hand. Either way:
+
+* the numbers live in script or in path coordinates, where search engines, reader modes, and
+    assistive technology can't read them;
+* nothing appears when script fails to load; and
+* each library has its own configuration format, event model, and styling hooks.
+
+The <{chart}> element keeps the numbers in markup, as <{data}> elements, and leaves the drawing to
+the user agent. It covers four chart types: pie, line, bar, and area.
+
+<div class=example id=example-intro-bar>
+    A bar chart compares two years of revenue:
+
+    <xmp highlight=html>
+    <chart type="bar">
+      <figcaption>Revenue by quarter</figcaption>
+      <axis type="category">Quarter</axis>
+      <axis type="value">Revenue ($M)</axis>
+      <series name="2025">
+        <data value="10">Q1</data>
+        <data value="14">Q2</data>
+        <data value="9">Q3</data>
+      </series>
+      <series name="2026">
+        <data value="12">Q1</data>
+        <data value="18">Q2</data>
+        <data value="11">Q3</data>
+      </series>
+      <legend></legend>
+    </chart>
+    </xmp>
+
+    The user agent draws three pairs of bars with the title above them and a key below. Each
+    <{data}> element's box is its bar, so this makes the bars rounded and highlights the one under
+    the pointer:
+
+    <xmp highlight=css>
+    chart data { border-start-start-radius: 4px; border-start-end-radius: 4px; }
+    chart data:hover { filter: brightness(1.15); }
+    </xmp>
+
+    <figure>
+        <img src="images/intro-bar.png" width=544 height=332 alt="A bar chart titled Revenue by quarter. Quarters Q1 to Q3 each have a blue 2025 bar and an orange 2026 bar on a value axis from 0 to 20, with the axis titles Quarter and Revenue ($M) and a legend below. The 2026 Q2 bar is lighter because the pointer is over it.">
+        <figcaption>The chart as the polyfill draws it, with the pointer over the 2026 Q2 bar.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-intro-pie>
+    A chart with one series doesn't need a <{series}> element:
+
+    <xmp highlight=html>
+    <chart type="pie">
+      <figcaption>Fruit sold</figcaption>
+      <data value="42">Apples</data>
+      <data value="30">Oranges</data>
+      <data value="28">Pears</data>
+      <legend></legend>
+    </chart>
+    </xmp>
+
+    <figure>
+        <img src="images/intro-pie.png" width=352 height=352 alt="A pie chart titled Fruit sold. Apples take the blue wedge from the top clockwise to about 5 o&#39;clock, then Oranges in orange and Pears in green, with a legend below.">
+        <figcaption>Wedges run clockwise from the top in tree order.</figcaption>
+    </figure>
+</div>
+
+The images in this specification were drawn by the
+<a href="https://github.com/arronei/HTML-Additions/tree/main/chart-element/polyfill">polyfill</a>.
+
+User agents that don't support this specification treat <{chart}>, <{series}>, and <{axis}> as
+unknown elements and show their text, so the names in the chart are still readable. See
+<a href="#example-fallback">the fallback example</a> for styles that make that fallback tidy.
+
+
+<h2 id=elements>Elements</h2>
+
+<h3 id=the-chart-element>The <code>chart</code> element</h3>
+
+<dl class=element>
+    <dt>Categories:
+    <dd>[=Flow content=].
+    <dd>[=Palpable content=].
+
+    <dt>Contexts in which this element can be used:
+    <dd>Where [=flow content=] is expected.
+
+    <dt>Content model:
+    <dd>In any order: zero or one <{figcaption}> element, zero or one <{legend}> element, zero or
+        one <{axis}> element whose <{axis/type}> attribute is in the [=axis/category=] state, zero
+        or one <{axis}> element whose <{axis/type}> attribute is in the [=axis/value=] state, and
+        either one or more <{series}> elements or zero or more <{data}> elements.
+
+    <dt>Content attributes:
+    <dd>Global attributes
+    <dd><{chart/type}> — The kind of chart to draw
+    <dd><{chart/stacked}> — Whether series are stacked
+    <dd><{chart/horizontal}> — Whether bars run along the inline axis
+
+    <dt>DOM interface:
+    <dd>{{HTMLChartElement}}
+</dl>
+
+The <dfn element>chart</dfn> element [=represents=] a chart of the points it contains.
+
+The <dfn element-attr for=chart>type</dfn> content attribute is an [=enumerated attribute=] with
+these keywords and states:
+
+<table class=data>
+    <thead>
+        <tr><th>Keyword<th>State<th>Draws
+    <tbody>
+        <tr><td><code>pie</code><td><dfn for=chart>Pie</dfn><td>One wedge for each point, sized by its share of the total
+        <tr><td><code>line</code><td><dfn for=chart>Line</dfn><td>A marker for each point, joined by one line for each series
+        <tr><td><code>bar</code><td><dfn for=chart>Bar</dfn><td>One bar for each point, grouped by category
+        <tr><td><code>area</code><td><dfn for=chart>Area</dfn><td>A filled region under each series' line
+</table>
+
+The attribute's [=missing value default=] and [=invalid value default=] are both the [=chart/Bar=]
+state. A <{chart}> element's <dfn>chart type</dfn> is the state of its <{chart/type}> attribute.
+
+The <dfn element-attr for=chart>stacked</dfn> attribute is a [=boolean attribute=]. When specified on
+a chart whose [=chart type=] is [=chart/Bar=] or [=chart/Area=], each series is drawn on top of the
+series before it, instead of beside or in front of it. It has no effect on other chart types.
+
+The <dfn element-attr for=chart>horizontal</dfn> attribute is a [=boolean attribute=]. When specified
+on a chart whose [=chart type=] is [=chart/Bar=], categories run along the block axis and bars grow
+along the inline axis. It has no effect on other chart types.
+
+<h3 id=the-series-element>The <code>series</code> element</h3>
+
+<dl class=element>
+    <dt>Categories:
+    <dd>None.
+
+    <dt>Contexts in which this element can be used:
+    <dd>As a child of a <{chart}> element.
+
+    <dt>Content model:
+    <dd>Zero or more <{data}> elements.
+
+    <dt>Content attributes:
+    <dd>Global attributes
+    <dd><{series/name}> — The series' name, shown in the legend
+
+    <dt>DOM interface:
+    <dd>{{HTMLSeriesElement}}
+</dl>
+
+The <dfn element>series</dfn> element [=represents=] one set of related points in a chart, such as
+one year's figures. Inside a chart, a <{series}> element generates no box of its own, and neither do
+its <code>::before</code> and <code>::after</code> pseudo-elements. Its points are laid out by the
+chart.
+
+The <dfn element-attr for=series>name</dfn> content attribute gives the series' name. The value is
+used in the legend and in the accessible names of the series' points.
+
+<h3 id=the-axis-element>The <code>axis</code> element</h3>
+
+<dl class=element>
+    <dt>Categories:
+    <dd>None.
+
+    <dt>Contexts in which this element can be used:
+    <dd>As a child of a <{chart}> element.
+
+    <dt>Content model:
+    <dd>Phrasing content.
+
+    <dt>Content attributes:
+    <dd>Global attributes
+    <dd><{axis/type}> — Which axis the element names
+
+    <dt>DOM interface:
+    <dd>{{HTMLAxisElement}}
+</dl>
+
+The <dfn element>axis</dfn> element [=represents=] the title of one of its parent chart's axes.
+
+The <dfn element-attr for=axis>type</dfn> content attribute is an [=enumerated attribute=] with two
+keywords: <code>category</code>, which maps to the <dfn for=axis>category</dfn> state, and
+<code>value</code>, which maps to the <dfn for=axis>value</dfn> state. The attribute's
+[=missing value default=] and [=invalid value default=] are both the [=axis/category=] state.
+
+Note: The axes are named <code>category</code> and <code>value</code>, not <code>x</code> and
+<code>y</code>, because the <{chart/horizontal}> attribute swaps their directions. An
+<code>&lt;axis type="value"></code> element always names the axis the numbers are on.
+
+<h3 id=changes-to-existing-elements>Using <code>data</code>, <code>figcaption</code>, and <code>legend</code> in a chart</h3>
+
+A <{data}> element can also be used as a child of a <{chart}> element or of a <{series}> element.
+There, it is a <dfn export>point</dfn>: its text is the point's name, and its <{data/value}> attribute
+is the point's number.
+
+A <{figcaption}> element can also be used as a child of a <{chart}> element. There, it is the chart's
+title.
+
+A <{legend}> element can also be used as a child of a <{chart}> element. There, it is where the chart
+draws its key.
+
+Note: A <{figcaption}> element is used for the title, rather than <{caption}>, because the HTML
+parser drops a <{caption}> start tag that isn't inside a <{table}>. None of the elements in this
+specification need changes to the HTML parser.
+
+
+<h2 id=data-model>The chart's data</h2>
+
+<h3 id=parts-of-a-chart>Parts of a chart</h3>
+
+The <dfn export>chart caption</dfn> of a <{chart}> element is its first <{figcaption}> element
+[=tree/child=], if any.
+
+The <dfn export>chart legend</dfn> of a <{chart}> element is its first <{legend}> element
+[=tree/child=], if any.
+
+The <dfn export>category axis title</dfn> and <dfn export>value axis title</dfn> of a <{chart}>
+element are its first <{axis}> element [=tree/child=] whose <{axis/type}> attribute is in the
+[=axis/category=] and [=axis/value=] state respectively, if any.
+
+Note: This follows <{fieldset}>, <{figure}>, and <{table}>: when there are two captions, the first
+one is used. The others are not rendered, and are an authoring error.
+
+<h3 id=series-and-points>Series and points</h3>
+
+<div algorithm="series list">
+    The <dfn export>series list</dfn> of a <{chart}> element |chart| is the [=list=] returned by
+    these steps:
+
+    1. If |chart| has one or more <{series}> element [=tree/children=], then let |result| be a
+        [=list=] of those elements, in [=tree order=].
+
+    1. Otherwise, if |chart| has one or more <{data}> element [=tree/children=], then let |result|
+        be a [=list=] containing one <dfn export>implied series</dfn>, whose points are those
+        elements.
+
+    1. Otherwise, return an empty [=list=].
+
+    1. If |chart|'s [=chart type=] is [=chart/Pie=], then return a [=list=] containing only the first
+        item of |result|.
+
+    1. Return |result|.
+</div>
+
+The <dfn export>points</dfn> of a <{series}> element are its <{data}> element [=tree/children=], in
+[=tree order=]. The points of an [=implied series=] are the <{data}> element [=tree/children=] of its
+chart, in tree order.
+
+A chart must not contain both <{series}> element children and <{data}> element children. A chart
+whose [=chart type=] is [=chart/Pie=] must not contain more than one <{series}> element.
+
+Note: When a chart has <{series}> element children, its <{data}> element children aren't drawn.
+Only the first series of a pie chart is drawn. Both follow HTML's usual rule: extra content stays in
+the document, but isn't used.
+
+<div class=example id=example-pie-series>
+    If a chart is changed from <code>type="bar"</code> to <code>type="pie"</code>, it keeps working:
+
+    <xmp highlight=html>
+    <chart type="pie">
+      <series name="2025">…</series>  <!-- drawn -->
+      <series name="2026">…</series>  <!-- not drawn; an authoring error -->
+    </chart>
+    </xmp>
+</div>
+
+The <dfn export for=point>name</dfn> of a [=point=] is the result of [=strip and collapse ASCII
+whitespace|stripping and collapsing ASCII whitespace=] in its [=descendant text content=].
+
+<div algorithm="point value">
+    The <dfn export for=point>value</dfn> of a [=point=] |point| is the result of these steps:
+
+    1. If |point| does not have a <{data/value}> attribute, then return <dfn>missing</dfn>.
+
+    1. Let |result| be the result of applying the [=rules for parsing floating-point number values=]
+        to the value of |point|'s <{data/value}> attribute.
+
+    1. If |result| is an error, then return [=missing=].
+
+    1. Return |result|.
+</div>
+
+Note: HTML requires every <{data}> element to have a <{data/value}> attribute. To mark a value that is
+unknown, authors write <code>value=""</code>, which is [=missing=].
+
+<h3 id=category-list>Categories</h3>
+
+The <dfn export>categories</dfn> of a <{chart}> element are an [=ordered set=] of strings: the
+[=point/names=] of the [=points=] of every series in the chart's [=series list=], taken in order,
+series by series.
+
+Note: A category that only appears in a later series is added after the categories of the series
+before it. Authors should give every series the same categories, in the same order.
+
+The <dfn>point for a category</dfn> in a series is the first of the series' [=points=] whose
+[=point/name=] is that category, or null if there is none. A series must not contain two points with
+the same [=point/name=]. Only the first is drawn.
+
+<h3 id=drawn-points>Drawn points</h3>
+
+A [=point=] |point| in a chart |chart| is <dfn export>drawn</dfn> if it is the [=point for a
+category=] in a series in |chart|'s [=series list=], and:
+
+<table class=data>
+    <thead>
+        <tr><th>[=Chart type=]<th>|point|'s [=point/value=] must be
+    <tbody>
+        <tr><td>[=chart/Pie=]<td>Greater than zero
+        <tr><td>[=chart/Line=], [=chart/Bar=], or [=chart/Area=]<td>Not [=missing=]
+</table>
+
+Note: A missing value leaves a gap: there is no bar, the line breaks, and the area stops and starts
+again. A pie ignores slices that are zero, negative, or missing, because they have no size.
+
+In a chart with a <{chart/stacked}> attribute, a [=missing=] value counts as zero when working out where the
+points after it in the same category start.
+
+
+<h2 id=rendering>Rendering</h2>
+
+<h3 id=layout>Chart layout</h3>
+
+A <{chart}> element's box is laid out according to its outer display type, which is
+<code>block</code> by default. Its contents are laid out by the <dfn export>chart layout</dfn>
+described in this section, whatever its inner display type. If the element's <code>display</code> is
+<code>none</code>, nothing is rendered.
+
+Note: There is no new <code>display</code> value. The positions the chart layout gives its parts are
+not exposed as CSS properties or custom properties, and authors can't change them. They can be read
+with <code>getBoundingClientRect()</code>.
+
+The chart layout divides the chart's content box into these areas:
+
+1. The [=chart caption=], if any, laid out as a block at the block-start edge.
+1. The [=chart legend=], if any, laid out as a block at the block-end edge.
+1. The <dfn>plot area</dfn>, which fills the space between them, minus the space the user agent
+    needs for axis lines, tick labels, and the [=category axis title=] and [=value axis title=].
+
+The chart caption, the chart legend, and the axis titles are laid out with their own styles, so
+<code>font</code>, <code>text-align</code>, <code>margin</code>, and similar properties apply to
+them. Other children of the chart are not rendered.
+
+For a chart whose [=chart type=] is not [=chart/Pie=], the user agent draws:
+
+* a <dfn>category axis</dfn> along the block-end edge of the [=plot area=], or along its inline-start
+    edge if the chart has a <{chart/horizontal}> attribute, labeled with the chart's [=categories=];
+* a <dfn>value axis</dfn> along the other edge, with a range and tick labels the user agent chooses
+    so that every drawn value, and every stacked total, fits. For [=chart/Bar=] and [=chart/Area=]
+    charts, the range includes zero; and
+* the [=category axis title=] next to the category axis, and the [=value axis title=] next to the
+    value axis.
+
+A chart's axes and tick labels have no element, and can't be styled in this version of this
+specification.
+
+<h3 id=marks>Marks</h3>
+
+Each [=drawn=] [=point=] generates a box, called its <dfn export>mark</dfn>, whose position and size
+the chart layout sets as described below. A point that is not drawn generates no box.
+
+The chart layout ignores these properties on a [=point=], and on a <{series}> element:
+<code>display</code>, <code>position</code>, the <code>inset</code> properties, <code>float</code>,
+<code>width</code>, <code>height</code> and their logical and minimum and maximum forms,
+<code>margin</code>, <code>box-sizing</code> (it is always <code>border-box</code>), and
+<code>clip-path</code> (it is used for pie wedges). The one exception is described for line markers.
+
+All other properties apply to a mark as usual, including <code>background</code>,
+<code>border</code>, <code>border-radius</code>, <code>box-shadow</code>, <code>outline</code>,
+<code>opacity</code>, <code>filter</code>, <code>transform</code>, and <code>cursor</code>. A
+<code>transform</code> doesn't change where the chart layout places the mark.
+
+In the following, *n* is the number of [=categories=], *L* is the length of the [=plot area=] along
+the [=category axis=], and *i* is a category's index, starting at 0.
+
+<h4 id=bar-marks>Bar charts</h4>
+
+The category axis is divided into *n* <dfn>category bands</dfn> of equal length. The used value of
+the chart's <code>row-gap</code> property separates the bands, with half of it before the first
+band and after the last. Percentages resolve against *L* ÷ *n*.
+
+When the chart has no <{chart/stacked}> attribute, each category band is divided into one slot for each series
+in the [=series list=], in order, separated by the used value of the chart's
+<code>column-gap</code> property. Percentages resolve against the band's length. A drawn point's
+mark fills its series' slot along the category axis, and runs along the [=value axis=] from zero to the
+point's [=point/value=].
+
+When the chart has a <{chart/stacked}> attribute, a drawn point's mark fills the whole category band along the
+category axis. Along the value axis, it starts where the previous series' mark in the same category
+ended, and is as long as the point's [=point/value=]. Positive values stack away from zero in one
+direction and negative values in the other.
+
+Note: The gaps follow the layout of a data table with one row for each category and one column for
+each series: <code>row-gap</code> separates categories, and <code>column-gap</code> separates
+series. That is true whichever way the bars run.
+
+<h4 id=line-marks>Line charts</h4>
+
+A category's position along the category axis is the middle of its [=category band=], computed with
+a <code>row-gap</code> of zero: (*i* + 0.5) × *L* ÷ *n*.
+
+A drawn point's mark is a marker centered on the point's position: its category's position along the
+category axis, and its [=point/value=] along the value axis. As an exception to [[#marks]], the
+marker's size is the used <code>inline-size</code> and <code>block-size</code> of the point, and a
+size of <code>auto</code> is zero.
+
+Each series draws a line through the positions of its drawn points, in category order. The line
+breaks wherever the next category has no drawn point.
+
+<h4 id=area-marks>Area charts</h4>
+
+Categories and point positions are placed as for line charts. Each series draws a filled region
+between its line and its baseline: zero, or the top of the previous series if the chart has a
+<{chart/stacked}> attribute. The region breaks where a line chart's line would.
+
+A drawn point's mark is a band that runs along the category axis from halfway between the previous
+category's position and its own, to halfway between its own and the next category's position. The
+first and last bands reach the edges of the [=plot area=]. Along the value axis, the band fills the
+plot area. If the chart has a <{chart/stacked}> attribute, it runs from the series' baseline to the point's
+position instead.
+
+<h4 id=pie-marks>Pie charts</h4>
+
+The pie is the largest square that fits in the center of the [=plot area=]. Every drawn point's mark
+has that square's position and size, and is clipped to its wedge.
+
+The wedges are placed clockwise in [=tree order=], starting at the top of the square. Each wedge's
+angle is 360 degrees multiplied by its point's [=point/value=], divided by the sum of the values of
+all drawn points in the series.
+
+Note: Clipping affects hit testing, so each wedge only responds to the pointer inside its own shape.
+
+<h3 id=series-painting>Painting series</h3>
+
+For [=chart/Line=] and [=chart/Area=] charts, each <{series}> element paints its line and its filled
+region. It uses the <code>stroke</code>, <code>stroke-width</code>, <code>stroke-opacity</code>,
+<code>stroke-dasharray</code>, <code>stroke-linecap</code>, <code>stroke-linejoin</code>,
+<code>fill</code>, and <code>fill-opacity</code> properties, as SVG shapes do. An [=implied series=]
+uses those properties from the <{chart}> element.
+
+Series paint below the marks, in [=tree order=]. The marks then paint in tree order.
+
+<h3 id=hit-testing>Hit testing</h3>
+
+A pointer over a mark targets the mark's <{data}> element. A pointer over a series' line or filled
+region, and not over a mark, targets the <{series}> element, or the <{chart}> element for an
+[=implied series=]. Anywhere else in the chart's box, the pointer targets the <{chart}> element, or
+the chart caption, legend, or axis title it is over.
+
+Note: <code>:hover</code>, <code>:active</code>, and events such as <code>click</code> and
+<code>pointerenter</code> therefore work on points as they do on any other element.
+
+<h3 id=point-text>Point text</h3>
+
+A point's text is used for its category label, its legend entry, and its accessible name. By default
+it isn't drawn in the mark, because the user agent style sheet gives points
+<code>content-visibility: hidden</code>. The mark's own background, border, and outline still paint.
+
+If an author makes a mark's contents visible, the chart layout centers them on the mark's
+label anchor:
+
+<table class=data>
+    <thead>
+        <tr><th>[=Chart type=]<th>Label anchor
+    <tbody>
+        <tr><td>[=chart/Bar=]<td>The center of the mark
+        <tr><td>[=chart/Pie=]<td>On the line that halves the wedge, two thirds of the way from the center to the edge. The contents are clipped to the wedge.
+        <tr><td>[=chart/Line=]<td>Just above the marker
+        <tr><td>[=chart/Area=]<td>Just above the point's position
+</table>
+
+<div class=example id=example-show-values>
+    This draws each bar's number in the bar, instead of its name:
+
+    <xmp highlight=css>
+    #revenue data { content-visibility: visible; font-size: 0; }
+    #revenue data::after { content: attr(value); font-size: 0.75rem; color: white; }
+    </xmp>
+
+    <figure>
+        <img src="images/show-values.png" width=544 height=332 alt="The revenue bar chart with each number centered in white inside its bar: 10, 12, 14, 18, 9, and 11.">
+        <figcaption>Each bar shows its value, centered on its label anchor.</figcaption>
+    </figure>
+</div>
+
+<h3 id=legend-rendering>The legend</h3>
+
+A [=chart legend=] draws one entry for each series in the chart's [=series list=] that has a
+<{series/name}> attribute. For a pie chart, it draws one entry for each [=drawn=] point instead. Each
+entry is a small swatch in the used <code>color</code> of the series or point, followed by the series'
+<{series/name}> or the point's [=point/name=].
+
+The legend element's own children are not rendered. Legend entries have no element, and can't be
+styled in this version of this specification.
+
+<h3 id=user-agent-styles>User agent style sheet</h3>
+
+The user agent style sheet contains these rules:
+
+<xmp highlight=css>
+@namespace "http://www.w3.org/1999/xhtml";
+
+chart { display: block; block-size: 20em; gap: 25% 2px; }
+chart[type=pie i] { block-size: auto; aspect-ratio: 1; }
+chart > figcaption { display: block; text-align: center; font-weight: bold; }
+chart > legend, chart > axis { display: block; }
+chart > legend { text-align: center; }
+
+/* Default palette. Authors override it with color. */
+chart > data, series:nth-of-type(8n+1), chart[type=pie i] data:nth-of-type(8n+1) { color: #2a78d6; }
+series:nth-of-type(8n+2), chart[type=pie i] data:nth-of-type(8n+2) { color: #eb6834; }
+series:nth-of-type(8n+3), chart[type=pie i] data:nth-of-type(8n+3) { color: #1baf7a; }
+series:nth-of-type(8n+4), chart[type=pie i] data:nth-of-type(8n+4) { color: #eda100; }
+series:nth-of-type(8n+5), chart[type=pie i] data:nth-of-type(8n+5) { color: #e87ba4; }
+series:nth-of-type(8n+6), chart[type=pie i] data:nth-of-type(8n+6) { color: #008300; }
+series:nth-of-type(8n+7), chart[type=pie i] data:nth-of-type(8n+7) { color: #4a3aa7; }
+series:nth-of-type(8n+8), chart[type=pie i] data:nth-of-type(8n+8) { color: #e34948; }
+
+/* Lines and areas. The chart's own values are for an implied series. */
+chart { stroke: #2a78d6; stroke-width: 2px; stroke-linejoin: round; stroke-linecap: round; fill: none; }
+series { stroke: currentColor; }
+chart[type=area i] { fill: #2a78d6; fill-opacity: 0.1; }
+chart[type=area i] series { fill: currentColor; }
+
+/* Marks */
+chart data { content-visibility: hidden; }
+chart:not([type=pie i], [type=line i], [type=area i]) data { background: currentColor; transform-origin: 50% 100%; }
+chart:not([type=pie i], [type=line i], [type=area i])[horizontal] data { transform-origin: 0% 50%; }
+chart[type=pie i] data { background: currentColor; }
+chart[type=line i] data { inline-size: 0.5em; block-size: 0.5em; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px Canvas; }
+chart[type=area i] data { transform-origin: 50% 100%; }
+chart[type=area i] data:hover { background: color-mix(in srgb, currentColor 15%, transparent); }
+chart data:focus-visible { outline: 2px solid; outline-offset: 2px; }
+</xmp>
+
+Note: The palette's order keeps neighboring series distinguishable for readers with the common forms
+of color vision deficiency. Three of its colors are below 3:1 contrast against a white background,
+so charts with more than two series should have a legend or visible labels.
+
+Note: The <code>transform-origin</code> values put a mark's anchor where it looks natural when the mark
+is scaled: a bar grows out from its base, and a wedge moves out from the center of the pie, which is
+the center of its box.
+
+
+<h2 id=interaction>Interaction</h2>
+
+<h3 id=keyboard>Keyboard</h3>
+
+A <{chart}> element with at least one [=drawn=] point takes one place in the [=sequential focus
+navigation order=]. Each chart has an <dfn export>active point</dfn>, which is initially its first
+drawn point in [=tree order=]. When sequential focus navigation reaches the chart, the user agent runs
+the [=focusing steps=] for the chart's active point. Moving focus forward or backward from any point
+in the chart leaves the chart.
+
+While a point in a chart is [=focused=], the user agent should move focus, and the active point, when
+the user presses these keys:
+
+<table class=data>
+    <thead>
+        <tr><th>Key<th>[=chart/Bar=], [=chart/Line=], and [=chart/Area=]<th>[=chart/Pie=]
+    <tbody>
+        <tr><td><kbd>ArrowRight</kbd><td>The drawn point in the next category of the same series<td>The next drawn point
+        <tr><td><kbd>ArrowLeft</kbd><td>The drawn point in the previous category of the same series<td>The previous drawn point
+        <tr><td><kbd>ArrowDown</kbd><td>The drawn point in the same category of the next series<td>The next drawn point
+        <tr><td><kbd>ArrowUp</kbd><td>The drawn point in the same category of the previous series<td>The previous drawn point
+        <tr><td><kbd>Home</kbd><td>The first drawn point in the same series<td>The first drawn point
+        <tr><td><kbd>End</kbd><td>The last drawn point in the same series<td>The last drawn point
+</table>
+
+For a chart with a <{chart/horizontal}> attribute, <kbd>ArrowDown</kbd> and <kbd>ArrowUp</kbd> move between
+categories, and <kbd>ArrowRight</kbd> and <kbd>ArrowLeft</kbd> move between series. When a movement
+reaches a category or series without a drawn point, it skips to the next one in the same direction.
+When there is none, focus doesn't move.
+
+Note: Focus moves to the <{data}> element itself, so <code>focus</code> and <code>blur</code> events
+fire at it and <code>data:focus-visible</code> matches it.
+
+<div class=example id=example-keyboard>
+    In the chart from <a href="#example-show-values">the example that shows values</a>, the user tabs
+    to the chart, which focuses the 2025 Q1 bar. They press <kbd>ArrowRight</kbd> to move to Q2, then
+    <kbd>ArrowDown</kbd> to move to the 2026 series. The focused point's accessible name is
+    "2026, Q2, 18".
+
+    <figure>
+        <img src="images/keyboard.png" width=544 height=332 alt="The revenue bar chart with a two-pixel orange outline, offset from the bar, around the 2026 Q2 bar.">
+        <figcaption>The user agent style sheet draws a focus ring around the focused point.</figcaption>
+    </figure>
+</div>
+
+<h3 id=dynamic-changes>Dynamic changes</h3>
+
+When any of the following change, the user agent updates the chart's rendering:
+
+* the chart's attributes;
+* the chart's [=tree/children=], or the children or attributes of its <{series}> and <{data}>
+    element children; or
+* the text of any of its [=points=].
+
+If the [=active point=] is no longer [=drawn=], it becomes the drawn point that is now in its place
+in [=tree order=], or the last drawn point if there is none. If a focused point stops being drawn,
+the user agent runs the [=focusing steps=] for the new active point.
+
+Note: This means script, and other features that change the DOM such as the <code>template</code>
+attribute in <a href="https://arronei.github.io/HTML-Additions/json-templates/spec/">JSON Templates</a>,
+update a chart by changing its <{data}> elements.
+
+
+<h2 id=dom-interface>The DOM interface</h2>
+
+<xmp class=idl>
+[Exposed=Window]
+interface HTMLChartElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
+  [CEReactions] attribute DOMString type;
+  [CEReactions, Reflect] attribute boolean stacked;
+  [CEReactions, Reflect] attribute boolean horizontal;
+};
+
+[Exposed=Window]
+interface HTMLSeriesElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
+  [CEReactions, Reflect] attribute DOMString name;
+};
+
+[Exposed=Window]
+interface HTMLAxisElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
+  [CEReactions] attribute DOMString type;
+};
+</xmp>
+
+The <dfn attribute for=HTMLChartElement>type</dfn> IDL attribute must [=reflect=] the
+<{chart/type}> content attribute, limited to only known values.
+
+The <dfn attribute for=HTMLChartElement>stacked</dfn>,
+<dfn attribute for=HTMLChartElement>horizontal</dfn>, and
+<dfn attribute for=HTMLSeriesElement>name</dfn> IDL attributes must [=reflect=] the content
+attributes of the same name.
+
+The <dfn attribute for=HTMLAxisElement>type</dfn> IDL attribute must [=reflect=] the <{axis/type}>
+content attribute, limited to only known values.
+
+<div class=example id=example-idl>
+    <xmp highlight=js>
+    const chart = document.querySelector("chart");
+
+    chart.type;              // "bar", including when the attribute is missing or invalid
+    chart.type = "line";     // redraws as a line chart
+
+    // Add a point to the first series.
+    const point = document.createElement("data");
+    point.value = "15";
+    point.textContent = "Q4";
+    chart.querySelector("series").append(point);
+
+    // Respond to the user picking a point.
+    chart.addEventListener("click", event => {
+      const picked = event.target.closest("data");
+      if (picked) console.log(picked.textContent, picked.value);
+    });
+
+    // Feature detection.
+    const supported = "HTMLChartElement" in window;
+    </xmp>
+</div>
+
+
+<h2 id=changes-to-html>Changes to the HTML Standard</h2>
+
+To integrate this specification into the HTML Standard [[!HTML]], make these changes:
+
+1. Add a new section for [[#the-chart-element]], [[#the-series-element]], and [[#the-axis-element]]
+    in "Embedded content", after
+    <a href="https://html.spec.whatwg.org/multipage/canvas.html#the-canvas-element">the
+    <code>canvas</code> element</a>.
+1. Add <{chart}> to the lists of [=flow content=] and [=palpable content=].
+1. In <a href="https://html.spec.whatwg.org/multipage/text-level-semantics.html#the-data-element">the
+    <code>data</code> element</a>, add "As a child of a <{chart}> or <{series}> element" to its
+    contexts, and a note pointing to [[#changes-to-existing-elements]].
+1. In <a href="https://html.spec.whatwg.org/multipage/grouping-content.html#the-figcaption-element">the
+    <code>figcaption</code> element</a> and
+    <a href="https://html.spec.whatwg.org/multipage/form-elements.html#the-legend-element">the
+    <code>legend</code> element</a>, add "As a child of a <{chart}> element" to their contexts.
+1. In "Rendering", add [[#rendering]], including the rules in [[#user-agent-styles]].
+1. In "User interaction", add [[#keyboard]].
+1. In the indices, add the <{chart}>, <{series}>, and <{axis}> elements, their attributes, and the
+    {{HTMLChartElement}}, {{HTMLSeriesElement}}, and {{HTMLAxisElement}} interfaces.
+
+
+<h2 id=a11y>Accessibility considerations</h2>
+
+* A <{chart}> element maps to the <code>graphics-document</code> role [[GRAPHICS-ARIA-1.0]], with a
+    role description of "chart". Its accessible name comes from its [=chart caption=], unless
+    <code>aria-label</code> or <code>aria-labelledby</code> is specified.
+* A <{series}> element maps to the <code>graphics-object</code> role, and its accessible name is its
+    <{series/name}> attribute.
+* A [=drawn=] [=point=] maps to the <code>graphics-symbol</code> role. Its accessible name combines its
+    series' name, its [=point/name=], and its [=point/value=], such as "2026, Q2, 18". Its text is
+    exposed even though <code>content-visibility: hidden</code> keeps it from being drawn.
+* The chart takes one place in the tab order, and the arrow keys move between points, so keyboard
+    users can reach every value without tabbing through each one.
+* The values are in the markup as text, so they are also available to reader modes, translation, and
+    user agents that don't draw the chart.
+* The default palette isn't enough to tell series apart for all users. Authors should add a legend and
+    axis titles, and can add patterns or borders with CSS.
+
+Issue: Define how <{chart}>, <{series}>, and points map to platform accessibility APIs in
+[[HTML-AAM-1.0]].
+
+
+<h2 id=security-privacy>Security and privacy considerations</h2>
+
+* This specification exposes no new information. A chart draws only values that are already in the
+    document.
+* A chart fetches nothing and runs no script. Its text is used as text, never as markup.
+* The positions of marks can be read with <code>getBoundingClientRect()</code>, as the positions of
+    other elements can. They depend only on the document's content and styles.
+
+
+<h2 id=more-examples>More examples</h2>
+
+*This section is non-normative.*
+
+<div class=example id=example-line-gap>
+    A line chart with a missing value. The line breaks between Tuesday and Thursday:
+
+    <xmp highlight=html>
+    <chart type="line">
+      <figcaption>Daily visitors</figcaption>
+      <axis type="value">Visitors</axis>
+      <data value="120">Mon</data>
+      <data value="135">Tue</data>
+      <data value="">Wed</data>
+      <data value="160">Thu</data>
+      <data value="150">Fri</data>
+    </chart>
+    </xmp>
+
+    <figure>
+        <img src="images/line-gap.png" width=544 height=332 alt="A line chart titled Daily visitors. Monday 120 connects to Tuesday 135, Wednesday has no marker, and Thursday 160 connects to Friday 150.">
+        <figcaption>The line breaks at the missing Wednesday value.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-stacked-area>
+    A stacked area chart with custom colors and a thicker line:
+
+    <xmp highlight=html>
+    <style>
+      #traffic series { stroke-width: 3px; fill-opacity: 0.6; }
+      #traffic .organic { color: seagreen; }
+      #traffic .paid { color: slateblue; }
+    </style>
+
+    <chart id="traffic" type="area" stacked>
+      <figcaption>Traffic by source</figcaption>
+      <series class="organic" name="Organic">
+        <data value="40">Jan</data>
+        <data value="45">Feb</data>
+        <data value="52">Mar</data>
+      </series>
+      <series class="paid" name="Paid">
+        <data value="20">Jan</data>
+        <data value="18">Feb</data>
+        <data value="25">Mar</data>
+      </series>
+      <legend></legend>
+    </chart>
+    </xmp>
+
+    <figure>
+        <img src="images/stacked-area.png" width=544 height=332 alt="A stacked area chart titled Traffic by source. A green Organic area rises from 40 to 52, and a purple Paid area is stacked on top of it, reaching 60, 63, and 77.">
+        <figcaption>The Paid series starts where the Organic series ends.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-horizontal>
+    A horizontal bar chart. One bar is highlighted by setting its own color:
+
+    <xmp highlight=html>
+    <chart type="bar" horizontal style="block-size: 12em; row-gap: 40%">
+      <axis type="value">Downloads (thousands)</axis>
+      <data value="82">Firefox</data>
+      <data value="64" style="color: crimson">Our browser</data>
+      <data value="51">Other</data>
+    </chart>
+    </xmp>
+
+    <figure>
+        <img src="images/horizontal.png" width=544 height=212 alt="A horizontal bar chart with bars for Firefox at 82, Our browser at 64 in crimson, and Other at 51, over a value axis titled Downloads (thousands).">
+        <figcaption>Categories run down the block axis, and the value axis title is below the chart.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-hover-wedge>
+    Pie wedges move out from the center when hovered or focused, because their
+    <code>transform-origin</code> is the center of the pie:
+
+    <xmp highlight=css>
+    chart[type=pie] data { transition: transform 0.15s; }
+    chart[type=pie] data:is(:hover, :focus-visible) { transform: scale(1.06); }
+    </xmp>
+
+    <figure>
+        <img src="images/hover-wedge.png" width=352 height=352 alt="The fruit pie chart with the orange Oranges wedge slightly larger than the others, extending past the edge of the pie.">
+        <figcaption>The pointer is over the Oranges wedge.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-json-templates>
+    With <a href="https://arronei.github.io/HTML-Additions/json-templates/spec/">JSON Templates</a>,
+    the points can come from a JSON file. The chart redraws when they arrive:
+
+    <xmp highlight=html>
+    <template id="salesPoint" json="./sales.json">
+      <data key="point"></data>
+    </template>
+
+    <chart type="bar">
+      <figcaption>Sales</figcaption>
+      <series name="2026" template="salesPoint"></series>
+    </chart>
+    </xmp>
+
+    <xmp highlight=json>
+    [
+      { "point": { "value": "42", "content": "Apples" } },
+      { "point": { "value": "30", "content": "Oranges" } }
+    ]
+    </xmp>
+</div>
+
+<div class=example id=example-fallback>
+    User agents that don't support charts show the elements' text inline. These styles turn that into
+    a readable list. User agents that support charts ignore <code>display</code> on points and series,
+    don't draw a point's contents or a series' pseudo-elements, and place axis titles themselves, so
+    the styles don't affect the chart:
+
+    <xmp highlight=css>
+    chart, series, axis, chart data { display: block; }
+    series::before { content: attr(name); font-weight: bold; }
+    chart data::after { content: ": " attr(value); }
+    </xmp>
+
+    <figure>
+        <img src="images/fallback.png" width=544 height=294 alt="Plain text lines: Revenue by quarter, Quarter, Revenue ($M), then 2025 in bold with Q1: 10, Q2: 14, Q3: 9, then 2026 in bold with Q1: 12, Q2: 18, Q3: 11.">
+        <figcaption>The revenue chart in a user agent without support, with these styles.</figcaption>
+    </figure>
+</div>
+
+
+<h2 id=alternate-proposals>Alternate proposals</h2>
+
+*This section is non-normative.*
+
+<h3 id=alt-pseudo-elements>Pseudo-elements for lines and areas</h3>
+
+Instead of letting <{series}> elements use SVG's <code>stroke</code> and <code>fill</code> properties,
+the line and filled region could be pseudo-elements:
+
+<xmp highlight=css>
+series::chart-line { border-block-start: 3px dashed currentColor; }
+series::chart-area { background: linear-gradient(currentColor, transparent); opacity: 0.4; }
+</xmp>
+
+A pseudo-element's box would be the plot area, and it would be clipped to the line or region's
+shape. That would allow gradients and other CSS backgrounds in the fill, and would let
+<code>series::chart-line:hover</code> be styled on its own. However, CSS has no way to draw a border
+along a path, so the line's thickness and dashes would still need new properties. The
+<code>stroke</code> properties already describe a line along a path, and already parse in CSS.
+
+<h3 id=alt-table>A <code>table</code> as the data source</h3>
+
+A chart could draw a <{table}> element inside it, with one row for each category and one column for
+each series. Tables have the best fallback, and already have captions and headers. But cell text
+would have to be parsed as numbers, cells can't be the marks without changing how tables are laid
+out, and a cell is a poor hit target for a pie wedge.
+
+<h3 id=alt-flat-points>Points with a <code>series</code> attribute</h3>
+
+Instead of <{series}> elements, each point could name its series:
+<code>&lt;data series="2026" value="18">Q2&lt;/data></code>. Every point would be a child of the
+chart, which suits templates that output one element for each record. But series names would repeat
+on every point, a series' name and color would have nowhere to go, and the fallback would be one
+long list.
+
+<h3 id=alt-caption>The <code>caption</code> element for the title</h3>
+
+<{caption}> would be a natural name for a chart's title, but the HTML parser drops a <{caption}>
+start tag outside a <{table}>, leaving its text directly in the chart. Using it would need a parser
+change, couldn't be polyfilled, and would give poor fallback.
+
+<h3 id=alt-exposed-geometry>Exposed geometry</h3>
+
+The chart layout could be a new <code>display: chart</code> value, or it could set custom properties
+such as <code>--chart-x</code> and <code>--chart-height</code> on each point for the user agent style
+sheet to use. Both would let authors move marks, which could make the chart show the wrong values.
+Keeping the geometry internal keeps each mark in its correct place.
+
+
+<h2 id=open-issues>Open issues</h2>
+
+Issue: <strong>Element names.</strong> The names <code>chart</code>, <code>series</code>, and
+<code>axis</code> need checking against existing content that uses them as unknown elements.
+
+Issue: <strong>Numbers and dates on the category axis.</strong> This version only supports
+categories, spaced evenly. Should a later version add an attribute such as <code>x</code> for
+numeric or date positions?
+
+Issue: <strong>Value axis range and number formatting.</strong> Should the <{axis}> element take
+<code>min</code> and <code>max</code> attributes? Should tick labels and accessible names be
+formatted, for example through the
+<a href="https://arronei.github.io/HTML-Additions/formatter-attribute/spec/"><code>formatter</code>
+attribute</a>?
+
+Issue: <strong>Styling axes, ticks, and legend entries.</strong> Pseudo-elements such as
+<code>chart::axis</code>, <code>chart::tick</code>, and <code>legend::swatch</code> are planned after
+this version.
+
+Issue: <strong>Legend position.</strong> The legend is always at the block-end edge. Should authors
+be able to move it, with an attribute or with CSS?
+
+Issue: <strong>Negative bars and right-to-left text.</strong> The <code>transform-origin</code> in the
+user agent style sheet is at the base of positive bars only, and horizontal bars always grow to the
+right. The user agent style sheet has no way to select negative bars or change direction.
+
+Issue: <strong>Overlapping area bands.</strong> In an area chart that isn't stacked, each series'
+bands fill the whole plot area, so only the last series' points can be reached with a pointer.
+Should hit testing pick the series whose value is closest to the pointer instead?
+
+Issue: <strong>Small line markers.</strong> A marker small enough to look right is hard to hit. Should
+the hit area for a marker be larger than its box?
+
+Issue: <strong>Series without names.</strong> A series with no <{series/name}> attribute has no legend
+entry. Should the user agent generate a name, such as "Series 2", instead?
+
+Issue: <strong>Tooltips.</strong> Should the user agent show a point's name and value when it is
+hovered or focused, or leave that to authors?
+
+Issue: <strong>Palette and dark mode.</strong> Should the default palette adapt to
+<code>color-scheme</code>, and should it be defined as a CSS feature that other content can use?

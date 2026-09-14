@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chart element demo</title>
+<script src="chart-element.js"></script>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+  body { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+  code { font-family: ui-monospace, monospace; }
+  select, button { font: inherit; }
+  .try { color: GrayText; margin: 0.25rem 0 0.5rem; }
+  .shot { max-inline-size: 32rem; padding: 1rem; background: Canvas; }
+  .shot chart { font-size: 0.9375rem; }
+  iframe { border: 0; inline-size: 100%; block-size: 16rem; }
+
+  /* Intro example */
+  #intro-bar data { border-start-start-radius: 4px; border-start-end-radius: 4px; }
+  #intro-bar data:hover { filter: brightness(1.15); }
+
+  /* Showing values */
+  #revenue data { content-visibility: visible; font-size: 0; }
+  #revenue data::after { content: attr(value); font-size: 0.75rem; color: white; }
+
+  /* Stacked area */
+  #traffic series { stroke-width: 3px; fill-opacity: 0.6; }
+  #traffic .organic { color: seagreen; }
+  #traffic .paid { color: slateblue; }
+
+  /* Hovered wedges */
+  #hover-pie data { transition: transform 0.15s; }
+  #hover-pie data:is(:hover, :focus-visible) { transform: scale(1.06); }
+</style>
+
+<h1>The <code>&lt;chart></code> element</h1>
+<p>
+  Live versions of the examples in the <a href="../spec/index.html">Chart Element spec</a>, running on
+  <code>chart-element.js</code>. Hover the marks, or tab to a chart and use the arrow keys.
+</p>
+
+<h2>Bar chart</h2>
+<p class="try">
+  Two series with axis titles and a legend.
+  <label>Type: <select id="type-picker"><option>bar</option><option>line</option><option>area</option><option>pie</option></select></label>
+  <label><input type="checkbox" id="stack-picker"> stacked</label>
+  <button id="add-point">Add Q4</button>
+</p>
+<div class="shot" id="shot-intro-bar">
+  <chart id="intro-bar" type="bar">
+    <figcaption>Revenue by quarter</figcaption>
+    <axis type="category">Quarter</axis>
+    <axis type="value">Revenue ($M)</axis>
+    <series name="2025">
+      <data value="10">Q1</data>
+      <data value="14">Q2</data>
+      <data value="9">Q3</data>
+    </series>
+    <series name="2026">
+      <data value="12">Q1</data>
+      <data value="18">Q2</data>
+      <data value="11">Q3</data>
+    </series>
+    <legend></legend>
+  </chart>
+</div>
+
+<h2>Pie chart</h2>
+<p class="try">One series, so no <code>&lt;series></code> element is needed.</p>
+<div class="shot" id="shot-intro-pie" style="max-inline-size: 20rem">
+  <chart type="pie">
+    <figcaption>Fruit sold</figcaption>
+    <data value="42">Apples</data>
+    <data value="30">Oranges</data>
+    <data value="28">Pears</data>
+    <legend></legend>
+  </chart>
+</div>
+
+<h2>Showing values</h2>
+<p class="try"><code>content-visibility: visible</code> and <code>attr(value)</code> put each number in its bar.</p>
+<div class="shot" id="shot-show-values">
+  <chart id="revenue" type="bar">
+    <series name="2025">
+      <data value="10">Q1</data>
+      <data value="14">Q2</data>
+      <data value="9">Q3</data>
+    </series>
+    <series name="2026">
+      <data value="12">Q1</data>
+      <data value="18">Q2</data>
+      <data value="11">Q3</data>
+    </series>
+    <legend></legend>
+  </chart>
+</div>
+
+<h2>Line chart with a missing value</h2>
+<p class="try">Wednesday has <code>value=""</code>, so the line breaks.</p>
+<div class="shot" id="shot-line-gap">
+  <chart type="line">
+    <figcaption>Daily visitors</figcaption>
+    <axis type="value">Visitors</axis>
+    <data value="120">Mon</data>
+    <data value="135">Tue</data>
+    <data value="">Wed</data>
+    <data value="160">Thu</data>
+    <data value="150">Fri</data>
+  </chart>
+</div>
+
+<h2>Stacked area chart</h2>
+<p class="try">Colors come from CSS <code>color</code>; line width and fill from <code>stroke-width</code> and <code>fill-opacity</code>.</p>
+<div class="shot" id="shot-stacked-area">
+  <chart id="traffic" type="area" stacked>
+    <figcaption>Traffic by source</figcaption>
+    <series class="organic" name="Organic">
+      <data value="40">Jan</data>
+      <data value="45">Feb</data>
+      <data value="52">Mar</data>
+    </series>
+    <series class="paid" name="Paid">
+      <data value="20">Jan</data>
+      <data value="18">Feb</data>
+      <data value="25">Mar</data>
+    </series>
+    <legend></legend>
+  </chart>
+</div>
+
+<h2>Horizontal bars</h2>
+<p class="try">One bar sets its own <code>color</code>.</p>
+<div class="shot" id="shot-horizontal">
+  <chart type="bar" horizontal style="block-size: 12em; row-gap: 40%">
+    <axis type="value">Downloads (thousands)</axis>
+    <data value="82">Firefox</data>
+    <data value="64" style="color: crimson">Our browser</data>
+    <data value="51">Other</data>
+  </chart>
+</div>
+
+<h2>Hovering a wedge</h2>
+<p class="try">Wedges scale from the center of the pie, so they move outward.</p>
+<div class="shot" id="shot-hover-wedge" style="max-inline-size: 20rem">
+  <chart id="hover-pie" type="pie">
+    <data value="42">Apples</data>
+    <data value="30">Oranges</data>
+    <data value="28">Pears</data>
+    <legend></legend>
+  </chart>
+</div>
+
+<h2>Without support</h2>
+<p class="try">The same chart in a frame without the polyfill, using the fallback styles from the spec.</p>
+<div class="shot" id="shot-fallback">
+  <iframe title="Fallback rendering" srcdoc='<!doctype html>
+    <style>
+      body { font: 0.9375rem/1.5 system-ui, sans-serif; margin: 0; }
+      chart, series, axis, chart data { display: block; }
+      series::before { content: attr(name); font-weight: bold; }
+      chart data::after { content: ": " attr(value); }
+    </style>
+    <chart type="bar">
+      <figcaption>Revenue by quarter</figcaption>
+      <axis type="category">Quarter</axis>
+      <axis type="value">Revenue ($M)</axis>
+      <series name="2025">
+        <data value="10">Q1</data>
+        <data value="14">Q2</data>
+        <data value="9">Q3</data>
+      </series>
+      <series name="2026">
+        <data value="12">Q1</data>
+        <data value="18">Q2</data>
+        <data value="11">Q3</data>
+      </series>
+      <legend></legend>
+    </chart>'></iframe>
+</div>
+
+<script>
+  const chart = document.getElementById('intro-bar');
+  document.getElementById('type-picker').addEventListener('change', (event) => { chart.type = event.target.value; });
+  document.getElementById('stack-picker').addEventListener('change', (event) => { chart.stacked = event.target.checked; });
+  document.getElementById('add-point').addEventListener('click', (event) => {
+    for (const [series, value] of [[chart.querySelector('series'), 15], [chart.querySelector('series:last-of-type'), 21]]) {
+      const point = document.createElement('data');
+      point.value = String(value);
+      point.textContent = 'Q4';
+      series.append(point);
+    }
+    event.target.disabled = true;
+  });
+</script>

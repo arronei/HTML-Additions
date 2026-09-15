@@ -1,0 +1,193 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>relation attribute polyfill: tests</title>
+<script src="relation-attribute.js"></script>
+<pre id="log"></pre>
+<script>
+  'use strict';
+  const log = document.getElementById('log');
+  let failed = 0;
+  const tests = [];
+  const test = (name, body) => tests.push([name, body]);
+
+  function assertEqual(actual, expected, label) {
+    const a = JSON.stringify(actual);
+    const e = JSON.stringify(expected);
+    if (a !== e) throw new Error(`${label}: expected ${e}, got ${a}`);
+  }
+
+  function fixture(html) {
+    const container = document.createElement('div');
+    container.id = 'fixture';
+    container.innerHTML = html;
+    document.body.append(container);
+    return (id) => document.getElementById(id);
+  }
+
+  // The polyfill sees markup and attribute changes a microtask late, and resets a task late.
+  const settle = () => new Promise((resolve) => setTimeout(resolve));
+
+  // Each checkbox as "x" (checked), "-" (indeterminate), or "o" (unchecked), in tree order.
+  const states = (...boxes) => boxes.map((b) => (b.indeterminate ? '-' : b.checked ? 'x' : 'o')).join('');
+
+  const TOPPINGS = `
+    <form id="form">
+      <input type="checkbox" id="all" name="toppings" value="all" relation="parent">
+      <input type="checkbox" id="a" name="toppings" value="cheese">
+      <input type="checkbox" id="b" name="toppings" value="olives">
+      <input type="checkbox" id="c" name="toppings" value="peppers">
+    </form>`;
+
+  test('relation reflects the relation attribute, limited to only known values', async () => {
+    const $ = fixture('<input id="p" relation="PARENT"><input id="l" relation="linked"><input id="x" relation="child">');
+    assertEqual([$('p').relation, $('l').relation, $('x').relation], ['parent', 'linked', ''], 'getter');
+    $('x').relation = 'Linked';
+    assertEqual([$('x').getAttribute('relation'), $('x').relation], ['Linked', 'linked'], 'setter');
+    assertEqual(document.createElement('input').relation, '', 'missing attribute');
+  });
+
+  test('clicking children makes the parent indeterminate, then checked, then unchecked', async () => {
+    const $ = fixture(TOPPINGS);
+    const boxes = ['all', 'a', 'b', 'c'].map($);
+    $('a').click();
+    assertEqual(states(...boxes), '-xoo', 'one checked');
+    $('b').click();
+    $('c').click();
+    assertEqual(states(...boxes), 'xxxx', 'all checked');
+    $('b').click();
+    assertEqual(states(...boxes), '-xox', 'one unchecked');
+    $('a').click();
+    $('c').click();
+    assertEqual(states(...boxes), 'oooo', 'none checked');
+  });
+
+  test('clicking the parent checks or unchecks every child, including from indeterminate', async () => {
+    const $ = fixture(TOPPINGS);
+    const boxes = ['all', 'a', 'b', 'c'].map($);
+    $('b').click();
+    $('all').click();
+    assertEqual(states(...boxes), 'xxxx', 'indeterminate parent clicked');
+    $('all').click();
+    assertEqual(states(...boxes), 'oooo', 'checked parent clicked');
+  });
+
+  test('a canceled click changes nothing', async () => {
+    const $ = fixture(TOPPINGS);
+    $('all').addEventListener('click', (event) => event.preventDefault());
+    $('all').click();
+    assertEqual(states(...['all', 'a', 'b', 'c'].map($)), 'oooo', 'states');
+  });
+
+  test('the checked IDL attribute propagates like a click', async () => {
+    const $ = fixture(TOPPINGS);
+    const boxes = ['all', 'a', 'b', 'c'].map($);
+    $('all').checked = true;
+    assertEqual(states(...boxes), 'xxxx', 'parent set');
+    $('c').checked = false;
+    assertEqual(states(...boxes), '-xxo', 'child set');
+  });
+
+  test('change listeners on the form see the updated group', async () => {
+    const $ = fixture(TOPPINGS);
+    let seen;
+    $('form').addEventListener('change', () => { seen = states(...['all', 'a', 'b', 'c'].map($)); });
+    $('all').click();
+    assertEqual(seen, 'xxxx', 'states in change listener');
+  });
+
+  test('the initial state comes from the children, not the parent\'s checked attribute', async () => {
+    const $ = fixture(`
+      <input type="checkbox" id="all" name="t" relation="parent" checked>
+      <input type="checkbox" id="a" name="t" checked>
+      <input type="checkbox" id="b" name="t">`);
+    await settle();
+    assertEqual(states($('all'), $('a'), $('b')), '-xo', 'states');
+  });
+
+  test('adding, removing, and renaming children updates the parent', async () => {
+    const $ = fixture(TOPPINGS);
+    const boxes = () => states(...['all', 'a', 'b'].map($));
+    $('a').checked = $('b').checked = true;
+    $('c').remove();
+    await settle();
+    assertEqual(boxes(), 'xxx', 'unchecked child removed');
+    $('form').insertAdjacentHTML('beforeend', '<input type="checkbox" id="d" name="toppings">');
+    await settle();
+    assertEqual(boxes(), '-xx', 'unchecked child added');
+    $('d').name = 'other';
+    await settle();
+    assertEqual(boxes(), 'xxx', 'child renamed out of the group');
+  });
+
+  test('form reset recomputes the parent from the children\'s defaults', async () => {
+    const $ = fixture(`
+      <form id="form">
+        <input type="checkbox" id="a" name="t" checked>
+        <input type="checkbox" id="b" name="t">
+        <input type="checkbox" id="all" name="t" relation="parent" checked>
+      </form>`);
+    await settle();
+    $('b').click();
+    assertEqual(states($('all'), $('a'), $('b')), 'xxx', 'before reset');
+    $('form').reset();
+    await settle();
+    assertEqual(states($('all'), $('a'), $('b')), '-xo', 'after reset');
+  });
+
+  test('groups are split by name and form owner; only the first parent counts', async () => {
+    const $ = fixture(`
+      <form id="f1">
+        <input type="checkbox" id="p" name="t" relation="parent">
+        <input type="checkbox" id="p2" name="t" relation="parent">
+        <input type="checkbox" id="a" name="t">
+        <input type="checkbox" id="other" name="u">
+      </form>
+      <form id="f2"><input type="checkbox" id="elsewhere" name="t"></form>
+      <input type="checkbox" id="outside" name="t" form="f1">`);
+    $('p').click();
+    assertEqual(states(...['p', 'p2', 'a', 'other', 'elsewhere', 'outside'].map($)), 'xxxoox', 'states');
+  });
+
+  test('linked checkboxes follow each other; unmarked ones with the same name don\'t', async () => {
+    const $ = fixture(`
+      <input type="checkbox" id="a" name="news" relation="linked">
+      <input type="checkbox" id="b" name="news" relation="linked">
+      <input type="checkbox" id="c" name="news" relation="linked">
+      <input type="checkbox" id="plain" name="news">`);
+    const boxes = ['a', 'b', 'c', 'plain'].map($);
+    $('b').click();
+    assertEqual(states(...boxes), 'xxxo', 'checked');
+    $('c').checked = false;
+    assertEqual(states(...boxes), 'oooo', 'unchecked by script');
+    $('plain').click();
+    assertEqual(states(...boxes), 'ooox', 'unmarked checkbox clicked');
+  });
+
+  test('linked checkboxes in a group with a parent are not its children', async () => {
+    const $ = fixture(`
+      <input type="checkbox" id="p" name="t" relation="parent">
+      <input type="checkbox" id="a" name="t">
+      <input type="checkbox" id="l1" name="t" relation="linked">
+      <input type="checkbox" id="l2" name="t" relation="linked">`);
+    const boxes = ['p', 'a', 'l1', 'l2'].map($);
+    $('l1').click();
+    assertEqual(states(...boxes), 'ooxx', 'linked clicked');
+    $('p').click();
+    assertEqual(states(...boxes), 'xxxx', 'parent clicked');
+  });
+
+  (async () => {
+    for (const [name, body] of tests) {
+      document.getElementById('fixture')?.remove();
+      try {
+        await body();
+        log.textContent += `PASS  ${name}\n`;
+      } catch (error) {
+        failed++;
+        log.textContent += `FAIL  ${name}\n      ${error.message}\n`;
+      }
+    }
+    log.textContent += failed ? `\n${failed} FAILED\n` : '\nALL PASSED\n';
+    document.title = failed ? 'FAIL' : 'PASS';
+  })();
+</script>

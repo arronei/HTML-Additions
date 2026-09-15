@@ -5,6 +5,7 @@ Scripts for maintaining the proposals. They aren't part of any proposal.
 | Script | What it does |
 | --- | --- |
 | [chart-screenshots.mjs](chart-screenshots.mjs) | Regenerates the images in [chart-element/spec/images/](../chart-element/spec/images/) by screenshotting [chart-element/polyfill/demo.html](../chart-element/polyfill/demo.html) in headless Chrome, including hovered and keyboard-focused states. |
+| [relation-screenshots.mjs](relation-screenshots.mjs) | Regenerates the images in [relation-attribute/spec/images/](../relation-attribute/spec/images/) from [relation-attribute/polyfill/demo.html](../relation-attribute/polyfill/demo.html) the same way. Run it with `node tools/relation-screenshots.mjs`. |
 
 ## `chart-screenshots.mjs`
 

@@ -1,0 +1,469 @@
+<pre class=metadata>
+Title: The Relation Attribute
+Shortname: relation-attribute
+Level: none
+Status: LD
+ED: https://arronei.github.io/HTML-Additions/relation-attribute/spec/
+Repository: arronei/HTML-Additions
+Editor: Arron Eicholz
+Abstract: This specification extends HTML with a <code>relation</code> content attribute for
+    <{input}> elements in the Checkbox state. It relates checkboxes that share a name. With
+    <code>relation="parent"</code>, one checkbox controls the others: checking it checks them all,
+    and it shows whether none, some, or all of them are checked, using the indeterminate state for
+    "some". With <code>relation="linked"</code>, checkboxes mirror each other, so checking one checks
+    them all. Both work without script.
+Markup Shorthands: markdown yes, css no
+Complain About: accidental-2119 no, missing-example-ids yes
+Assume Explicit For: yes
+</pre>
+
+<pre class=link-defaults>
+spec:html; type:element; text:input
+spec:html; type:element; text:form
+spec:html; type:element; text:fieldset
+spec:html; type:element; text:legend
+spec:html; type:element-attr; for:input; text:type
+spec:html; type:element-attr; for:input; text:name
+spec:html; type:element-attr; for:input; text:checked
+spec:html; type:element-attr; for:input; text:disabled
+spec:html; type:element-attr; for:input; text:value
+spec:html; type:element-attr; for:input; text:form
+spec:html; type:attribute; for:HTMLInputElement; text:checked
+spec:html; type:attribute; for:HTMLInputElement; text:indeterminate
+spec:dom; type:dfn; text:tree
+spec:dom; type:dfn; text:tree order
+spec:dom; type:dfn; for:tree; text:root
+</pre>
+
+<pre class=anchors>
+spec: html; urlPrefix: https://html.spec.whatwg.org/multipage/
+    urlPrefix: common-microsyntaxes.html
+        type: dfn
+            text: enumerated attribute; url: #enumerated-attribute
+            text: keyword; url: #enumerated-attribute
+            text: missing value default; url: #missing-value-default
+            text: invalid value default; url: #invalid-value-default
+    urlPrefix: common-dom-interfaces.html
+        type: dfn
+            text: limited to only known values; url: #limited-to-only-known-values
+    urlPrefix: form-control-infrastructure.html
+        type: dfn
+            text: checkedness; url: #concept-fe-checked
+            text: form owner; url: #form-owner
+            text: reset algorithm; url: #concept-form-reset-control
+    urlPrefix: input.html
+        type: dfn
+            text: Checkbox; url: #checkbox-state-(type=checkbox)
+            text: dirty checkedness flag; url: #concept-input-checked-dirty-flag
+            text: radio button group; url: #radio-button-group
+            text: input activation behavior; url: #input-activation-behavior
+            text: legacy-pre-activation behavior; url: #the-input-element:legacy-pre-activation-behavior
+            text: legacy-canceled-activation behavior; url: #the-input-element:legacy-canceled-activation-behavior
+</pre>
+
+
+<h2 id=intro>Introduction</h2>
+
+*This section is non-normative.*
+
+Lists of checkboxes often start with one that stands for the whole list: "All toppings", "Select all
+messages", "Every day of the week". That checkbox has three looks. It's unchecked when nothing in the
+list is checked, checked when everything is, and indeterminate in between. Clicking it checks or
+unchecks the whole list. HTML already has the indeterminate look, through the
+{{HTMLInputElement/indeterminate}} IDL attribute, but only script can set it, so every page that wants
+this pattern writes the same event listeners.
+
+Forms also sometimes show one choice in two places, such as a newsletter opt-in at the top of a long
+form and again in its summary. The two copies need to stay in step.
+
+The <{input/relation}> attribute lets authors declare both patterns. It relates checkboxes the same way
+HTML already relates radio buttons: by their shared <{input/name}>.
+
+<div class=example id=example-intro-parent>
+    <xmp highlight=html>
+    <fieldset>
+      <legend>Toppings</legend>
+      <label><input type="checkbox" name="toppings" value="all" relation="parent"> All toppings</label>
+      <label><input type="checkbox" name="toppings" value="cheese"> Cheese</label>
+      <label><input type="checkbox" name="toppings" value="olives"> Olives</label>
+      <label><input type="checkbox" name="toppings" value="peppers"> Peppers</label>
+    </fieldset>
+    </xmp>
+
+    "All toppings" is the parent, and the other three are its children. Checking Cheese makes "All
+    toppings" indeterminate. Checking Olives and Peppers as well makes it checked. Clicking "All
+    toppings" then unchecks all three.
+
+    <figure>
+        <img src="images/parent-states.png" width=489 height=169 alt="Three copies of the toppings list side by side, labeled None, Some, and All. In None, every checkbox is unchecked. In Some, Cheese and Peppers are checked, Olives is not, and All toppings shows a dash for the indeterminate state. In All, every checkbox is checked.">
+        <figcaption>The parent's three looks, as the polyfill draws them. The children are indented
+        with CSS; the attribute doesn't change layout.</figcaption>
+    </figure>
+</div>
+
+<div class=example id=example-intro-linked>
+    <xmp highlight=html>
+    <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Email me the newsletter</label>
+    …
+    <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Newsletter</label>
+    </xmp>
+
+    Checking either checkbox checks the other.
+</div>
+
+User agents that don't support this specification ignore the attribute. The checkboxes still work
+and submit as they do today; they just don't update each other.
+
+
+<h2 id=the-relation-attribute>The <code>relation</code> attribute</h2>
+
+<h3 id=the-content-attribute>The content attribute</h3>
+
+The <dfn element-attr for=input>relation</dfn> content attribute is an [=enumerated attribute=] with
+the following [=keywords=] and states:
+
+<table class=data>
+    <thead>
+        <tr><th>Keyword<th>State<th>Brief description
+    <tbody>
+        <tr>
+            <td><dfn attr-value for=input/relation>parent</dfn>
+            <td><dfn for=relation>Parent</dfn>
+            <td>The checkbox checks and unchecks the other checkboxes in its group, and shows
+                whether none, some, or all of them are checked.
+        <tr>
+            <td><dfn attr-value for=input/relation>linked</dfn>
+            <td><dfn for=relation>Linked</dfn>
+            <td>The checkbox and the other linked checkboxes in its group always change together.
+</table>
+
+The attribute's [=missing value default=] and [=invalid value default=] are both the
+<i>None</i> state, in which the attribute has no effect.
+
+The attribute may be specified on <{input}> elements whose <{input/type}> attribute is in the
+[=Checkbox=] state. On any other element, it does not apply and has no effect.
+
+<h3 id=checkbox-groups>Checkbox groups</h3>
+
+The <dfn export>checkbox group</dfn> that contains an <{input}> element |a| also contains every other
+<{input}> element |b| that fulfills all of the following conditions:
+
+* Both |a| and |b| have a <{input/type}> attribute in the [=Checkbox=] state.
+* Either |a| and |b| have the same [=form owner=], or they both have no [=form owner=].
+* Both |a| and |b| are in the same [=tree=].
+* They both have a <{input/name}> attribute, their <{input/name}> attributes are not empty, and the
+    value of |a|'s <{input/name}> attribute is identical to the value of |b|'s.
+
+Note: This is the same rule as a [=radio button group=], applied to checkboxes. A checkbox with no
+<{input/name}>, or an empty one, is in a group on its own.
+
+The <dfn export for="checkbox group">parent</dfn> of a [=checkbox group=] is the first element, in
+[=tree order=], in the group whose <{input/relation}> attribute is in the [=relation/Parent=] state. A
+group has no parent if no element in it is in that state.
+
+The <dfn export for="checkbox group">children</dfn> of a [=checkbox group=] that has a
+[=checkbox group/parent=] are the elements in the group, other than the parent, whose
+<{input/relation}> attribute is not in the [=relation/Linked=] state.
+
+The <dfn export>linked checkboxes</dfn> of an element whose <{input/relation}> attribute is in the
+[=relation/Linked=] state are the other elements in its [=checkbox group=] whose <{input/relation}>
+attribute is also in the [=relation/Linked=] state.
+
+A [=checkbox group=] must not contain more than one element whose <{input/relation}> attribute is in
+the [=relation/Parent=] state. User agents treat any such element after the first as one of the
+[=checkbox group/children=].
+
+<div class=note>
+    Children don't need the attribute. The parent is the only checkbox in a parent group that is
+    marked, and every linked checkbox is marked. A group can hold a parent with its children and a set
+    of linked checkboxes at the same time, though that is rarely useful.
+</div>
+
+<h3 id=the-idl-attribute>The IDL attribute</h3>
+
+<xmp class=idl>
+partial interface HTMLInputElement {
+  [CEReactions] attribute DOMString relation;
+};
+</xmp>
+
+The <dfn attribute for=HTMLInputElement>relation</dfn> IDL attribute must [=reflect=] the
+<{input/relation}> content attribute, [=limited to only known values=].
+
+<div class=example id=example-idl>
+    <xmp highlight=js>
+    const all = form.querySelector('[relation]');
+
+    all.relation;          // "parent"
+    all.indeterminate;     // true when some, but not all, toppings are checked
+
+    // Feature detection.
+    const supported = "relation" in HTMLInputElement.prototype;
+    </xmp>
+</div>
+
+
+<h2 id=behavior>Behavior</h2>
+
+<h3 id=updating-the-parent>Updating the parent</h3>
+
+<div algorithm>
+    To <dfn export>update the parent</dfn> of a [=checkbox group=] |group|:
+
+    1. If |group| has no [=checkbox group/parent=], or no [=checkbox group/children=], then return.
+
+    1. Let |parent| be |group|'s [=checkbox group/parent=].
+
+    1. Let |count| be the number of |group|'s [=checkbox group/children=] whose [=checkedness=] is true.
+
+    1. If |count| is the number of |group|'s [=checkbox group/children=], then set |parent|'s
+        [=checkedness=] to true and its {{HTMLInputElement/indeterminate}} IDL attribute to false.
+
+    1. Otherwise, if |count| is 0, then set |parent|'s [=checkedness=] to false and its
+        {{HTMLInputElement/indeterminate}} IDL attribute to false.
+
+    1. Otherwise, set |parent|'s [=checkedness=] to false and its {{HTMLInputElement/indeterminate}}
+        IDL attribute to true.
+
+    1. Set |parent|'s [=dirty checkedness flag=] to true.
+</div>
+
+When any of the following occur, the user agent must [=update the parent=] of each affected
+[=checkbox group=]:
+
+* The [=checkedness=] of one of a group's [=checkbox group/children=] changes, for any reason, except
+    while the user agent runs [=propagate the checkedness=].
+* The [=checkedness=] of a group's [=checkbox group/parent=] is changed by its [=reset algorithm=], or
+    by the addition or removal of its <{input/checked}> content attribute.
+* An element joins or leaves a group, or a group's [=checkbox group/parent=] changes. For example, an
+    element is inserted or removed; its <{input/name}>, <{input/type}>, <{input/relation}>, or
+    <{input/form}> attribute is set, changed, or removed; or its [=form owner=] changes.
+
+<div class=note>
+    The parent's state comes from its children. The parent's own <{input/checked}> content attribute
+    has no visible effect while it has children, and a form reset shows the state that the children's
+    defaults give. An indeterminate parent has a [=checkedness=] of false, so it isn't submitted.
+</div>
+
+<h3 id=propagating-the-checkedness>Propagating the checkedness</h3>
+
+<div algorithm>
+    To <dfn export>propagate the checkedness</dfn> of an <{input}> element |element|:
+
+    1. Let |group| be |element|'s [=checkbox group=].
+
+    1. Let |targets| be an empty [=list=].
+
+    1. If |element| is |group|'s [=checkbox group/parent=], then set |targets| to |group|'s
+        [=checkbox group/children=].
+
+    1. Otherwise, if |element|'s <{input/relation}> attribute is in the [=relation/Linked=] state, then
+        set |targets| to |element|'s [=linked checkboxes=].
+
+    1. [=list/For each=] |target| of |targets|:
+
+        1. Set |target|'s [=checkedness=] to |element|'s [=checkedness=].
+
+        1. Set |target|'s {{HTMLInputElement/indeterminate}} IDL attribute to false.
+
+        1. Set |target|'s [=dirty checkedness flag=] to true.
+
+    1. [=Update the parent=] of |group|.
+</div>
+
+The user agent must [=propagate the checkedness=] of an element when:
+
+* The user checks or unchecks it. See [[#patch-activation-behavior]].
+* Script sets its {{HTMLInputElement/checked}} IDL attribute. See [[#patch-checked-idl]].
+
+Note: Propagation doesn't run when the form is reset, or when the <{input/checked}> content attribute
+changes. Those restore each checkbox's own default, and the parent is then updated from its children.
+
+<h3 id=patch-activation-behavior>Changes to the Checkbox state's activation behavior</h3>
+
+The [=input activation behavior=] of an <{input}> element in the [=Checkbox=] state [[!HTML]] is
+changed as follows. Inserted text is <ins>marked like this</ins>.
+
+<div algorithm="checkbox input activation behavior (patched)">
+    1. If the element is not [=connected=], then return.
+
+    1. <ins>[=Propagate the checkedness=] of the element.</ins>
+
+    1. [=Fire an event=] named <code>input</code> at the element with the {{Event/bubbles}} and
+        {{Event/composed}} attributes initialized to true.
+
+    1. [=Fire an event=] named <code>change</code> at the element with the {{Event/bubbles}}
+        attribute initialized to true.
+</div>
+
+Note: The [=legacy-pre-activation behavior=] has already toggled the element's [=checkedness=] and
+cleared its {{HTMLInputElement/indeterminate}} IDL attribute. Because the change happens in the
+activation behavior, a <code>click</code> event listener that cancels the event stops the whole group
+from changing. Listeners for <code>input</code> and <code>change</code> see the whole group already
+updated.
+
+<h3 id=patch-checked-idl>Changes to the <code>checked</code> IDL attribute</h3>
+
+The setter steps of the {{HTMLInputElement/checked}} IDL attribute [[!HTML]] are changed as follows:
+
+<blockquote>
+    On setting, it must set the element's [=checkedness=] to the new value and set the element's
+    [=dirty checkedness flag=] to true<ins>, and then, if the element's <{input/type}> attribute is in
+    the [=Checkbox=] state, [=propagate the checkedness=] of the element</ins>.
+</blockquote>
+
+Note: Setting {{HTMLInputElement/checked}} propagates even when the value doesn't change. Setting
+<code>checked = true</code> on an indeterminate parent checks every child.
+
+<h3 id=other-features>Interaction with other features</h3>
+
+*This section is non-normative.*
+
+: Events
+:: Only the checkbox the user clicked fires <code>input</code> and <code>change</code>. The checkboxes
+    it changes don't, just as a radio button that is unchecked because another one was checked doesn't.
+: Form submission
+:: Nothing changes. Each checked checkbox submits its own entry, including the parent and every
+    linked checkbox. Authors can give the parent a value such as <code>all</code> that the server
+    ignores.
+: {{HTMLInputElement/indeterminate}}
+:: Script can still set it, but the next change in the group replaces it.
+: <{input/disabled}>
+:: Disabled children are checked and unchecked along with the rest, and count toward the parent's
+    state. A disabled parent can't be clicked, but it still shows its children's state.
+: Constraint validation
+:: <{input/required}> on a checkbox checks that checkbox alone, as it does today.
+
+
+<h2 id=changes-to-html>Changes to the HTML Standard</h2>
+
+To integrate this specification into the HTML Standard [[!HTML]], make these changes:
+
+1. In <a href="https://html.spec.whatwg.org/multipage/input.html#the-input-element">the
+    <code>input</code> element</a>:
+    * Add <{input/relation}> to the element's content attributes.
+    * Add the {{HTMLInputElement/relation}} IDL attribute to the DOM interface.
+    * Add a <{input/relation}> row to the table that summarizes which content attributes apply to
+        each <{input/type}> state. Mark it "Yes" for the [=Checkbox=] state only.
+1. In <a href="https://html.spec.whatwg.org/multipage/input.html#checkbox-state-(type=checkbox)">the
+    Checkbox state</a>, add the definitions in [[#the-relation-attribute]] and
+    [[#updating-the-parent]], and apply the change in [[#patch-activation-behavior]].
+1. Apply the change in [[#patch-checked-idl]].
+1. In the index of element attributes, add a row: attribute <code>relation</code>; element
+    <code>input</code>; description "Relates checkboxes that share a name"; value
+    "<code>parent</code>; <code>linked</code>".
+
+
+<h2 id=a11y>Accessibility considerations</h2>
+
+The user agent sets the parent's indeterminate state itself, so assistive technologies announce it
+as "mixed" or "partially checked", the same as when script sets
+{{HTMLInputElement/indeterminate}} today. They don't announce the checkboxes that change as a
+result of a click, so authors should make the relationship clear in the labels, for example "All
+toppings", and should put the parent first, with its children grouped under it in a <{fieldset}>
+with a <{legend}>.
+
+Linked checkboxes are separate controls, so screen reader users meet each one. Each needs a label
+that makes sense on its own.
+
+
+<h2 id=security-privacy>Security and privacy considerations</h2>
+
+* This specification exposes no new information. It only changes the state of checkboxes on the same
+    page, in the same form, with the same name.
+* The attribute can't run script, fetch resources, or reach controls in another document or shadow
+    tree.
+* Servers must not assume the submitted checkboxes are consistent. User agents without support, and
+    clients that aren't browsers, submit whatever they like.
+
+
+<h2 id=more-examples>More examples</h2>
+
+*This section is non-normative.*
+
+<div class=example id=example-linked-summary>
+    A long form asks about the newsletter near the top, and repeats the choice in the summary above
+    the submit button.
+
+    <xmp highlight=html>
+    <form action="/signup">
+      <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Email me the newsletter</label>
+      …
+      <h2>Summary</h2>
+      <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Newsletter</label>
+      <button>Sign up</button>
+    </form>
+    </xmp>
+
+    <figure>
+        <img src="images/linked.png" width=352 height=149 alt="A checked checkbox labeled Email me the newsletter, a dashed divider and the heading Summary, and below it a second checked checkbox labeled Newsletter.">
+        <figcaption>After the user checks the first checkbox, the second one follows.</figcaption>
+    </figure>
+
+    When both are checked, the form submits <code>newsletter=yes&amp;newsletter=yes</code>. Servers
+    that read a single value get <code>yes</code> either way.
+</div>
+
+<div class=example id=example-select-all-messages>
+    A mail client's "select all" box sits in the table header, and each row has its own checkbox. The
+    <{input/form}> attribute puts them all in the same form, and so in the same group, wherever they
+    are in the table.
+
+    <xmp highlight=html>
+    <form id="inbox" action="/archive" method="post"></form>
+    <table>
+      <tr><th><input type="checkbox" form="inbox" name="message" value="all" relation="parent" aria-label="Select all messages">
+          <th>From<th>Subject
+      <tr><td><input type="checkbox" form="inbox" name="message" value="1041" aria-label="Select message from Ana">
+          <td>Ana<td>Lunch?
+      <tr><td><input type="checkbox" form="inbox" name="message" value="1042" aria-label="Select message from Ben">
+          <td>Ben<td>Build report
+    </table>
+    <button form="inbox">Archive</button>
+    </xmp>
+</div>
+
+
+<h2 id=alternate-proposals>Alternate proposals</h2>
+
+*This section is non-normative.*
+
+<h3 id=alt-parent-by-id>Naming the parent by ID</h3>
+
+Instead of relating checkboxes by name, each child could point at its parent, as in
+<code>&lt;input type="checkbox" parent="all-toppings"></code>. That would allow nesting, where a
+parent is itself the child of another parent, and it would let children have different names. But
+it needs an ID on every parent and an attribute on every child, and IDs don't work across shadow
+trees. Relating by name matches radio buttons and needs one attribute for the common case.
+
+<h3 id=alt-script>Script</h3>
+
+Authors can already do this with <code>input</code> event listeners and the
+{{HTMLInputElement/indeterminate}} IDL attribute, as the polyfill does. It has to be written, and
+tested, for every page. It also has to watch for checkboxes being added, removed, and reset, and it
+doesn't work when script is turned off.
+
+
+<h2 id=open-issues>Open issues</h2>
+
+Issue: <strong>Attribute name.</strong> Alternatives include <code>checkboxgroup</code>,
+<code>group</code>, and <code>role</code>-like keywords such as <code>selectall</code> and
+<code>mirror</code>.
+
+Issue: <strong>Events on the changed checkboxes.</strong> Should the checkboxes that the user agent
+changes also fire <code>input</code> and <code>change</code>? Radio buttons don't, but authors may
+have <code>change</code> listeners on individual children.
+
+Issue: <strong>Disabled children.</strong> Should a parent skip disabled children, both when it
+checks them and when it counts them?
+
+Issue: <strong>Submitting the parent.</strong> Should the parent be left out of the form's entry
+list, since its value only summarizes its children?
+
+Issue: <strong>Nesting.</strong> A checkbox has one name, so it can't be the parent of one group and a
+child of another. Should nested trees of checkboxes be supported, for example with
+[[#alt-parent-by-id]]?
+
+Issue: <strong>Linked checkboxes that disagree.</strong> Linked checkboxes that start with different
+<{input/checked}> attributes, or that are added to a group later, stay out of step until one of them
+changes. Should the user agent bring them into step, and if so, from which checkbox?

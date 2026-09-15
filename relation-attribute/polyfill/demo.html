@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relation attribute demo</title>
+<script src="relation-attribute.js"></script>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+  body { max-width: 46rem; margin: 0 auto; padding: 1rem; }
+  input, button { font: inherit; }
+  code, output { font-family: ui-monospace, monospace; }
+  output { display: block; margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem;
+           background: #8881; white-space: pre-wrap; }
+  .try { color: GrayText; margin: 0.25rem 0 0.5rem; }
+  fieldset { border: 1px solid #8886; border-radius: 0.5rem; }
+  fieldset label { display: block; }
+  fieldset label:not(:first-of-type) { margin-inline-start: 1.5rem; }
+  input[type=checkbox] { inline-size: 1rem; block-size: 1rem; vertical-align: -0.125rem; margin-inline-end: 0.375rem; }
+  .shot { padding: 1rem; background: Canvas; }
+  .row { inline-size: fit-content; display: flex; flex-wrap: wrap; gap: 1rem; }
+  .row fieldset { margin: 0; }
+  .summary { margin-block-start: 1rem; padding-block-start: 0.75rem; border-block-start: 1px dashed #8886; }
+</style>
+
+<h1>Relation attribute</h1>
+<p>
+  Live versions of the examples in the <a href="../spec/index.html">Relation Attribute spec</a>, running on
+  <code>relation-attribute.js</code>. Under each form is what the form would submit, updated as you click.
+</p>
+
+<h2>Parent</h2>
+<p class="try">Check one topping and "All toppings" becomes indeterminate. Check them all and it's checked. Click it to check or uncheck every topping.</p>
+<form>
+  <fieldset>
+    <legend>Toppings</legend>
+    <label><input type="checkbox" name="toppings" value="all" relation="parent"> All toppings</label>
+    <label><input type="checkbox" name="toppings" value="cheese"> Cheese</label>
+    <label><input type="checkbox" name="toppings" value="olives"> Olives</label>
+    <label><input type="checkbox" name="toppings" value="peppers"> Peppers</label>
+  </fieldset>
+  <output></output>
+</form>
+
+<h2>Linked</h2>
+<p class="try">The same choice appears at the top of the form and again in the summary. Check either one and the other follows.</p>
+<form>
+  <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Email me the newsletter</label>
+  <p class="summary">Summary</p>
+  <label><input type="checkbox" name="newsletter" value="yes" relation="linked"> Newsletter</label>
+  <output></output>
+</form>
+
+<h2>Screenshots</h2>
+<p class="try">The images in the spec are taken from these, by <code>tools/relation-screenshots.mjs</code>.</p>
+
+<div class="shot row" id="shot-parent-states">
+  <fieldset>
+    <legend>None</legend>
+    <label><input type="checkbox" name="none" relation="parent"> All toppings</label>
+    <label><input type="checkbox" name="none"> Cheese</label>
+    <label><input type="checkbox" name="none"> Olives</label>
+    <label><input type="checkbox" name="none"> Peppers</label>
+  </fieldset>
+  <fieldset>
+    <legend>Some</legend>
+    <label><input type="checkbox" name="some" relation="parent"> All toppings</label>
+    <label><input type="checkbox" name="some" checked> Cheese</label>
+    <label><input type="checkbox" name="some"> Olives</label>
+    <label><input type="checkbox" name="some" checked> Peppers</label>
+  </fieldset>
+  <fieldset>
+    <legend>All</legend>
+    <label><input type="checkbox" name="all" relation="parent"> All toppings</label>
+    <label><input type="checkbox" name="all" checked> Cheese</label>
+    <label><input type="checkbox" name="all" checked> Olives</label>
+    <label><input type="checkbox" name="all" checked> Peppers</label>
+  </fieldset>
+</div>
+
+<div class="shot" id="shot-linked" style="max-inline-size: 20rem">
+  <label><input type="checkbox" name="linked-shot" relation="linked"> Email me the newsletter</label>
+  <p class="summary">Summary</p>
+  <label><input type="checkbox" name="linked-shot" relation="linked"> Newsletter</label>
+</div>
+
+<script>
+  // new FormData(form) builds the same entry list as a real submission.
+  const show = (form) => {
+    form.querySelector('output').value = new URLSearchParams(new FormData(form)).toString() || '(nothing)';
+  };
+  for (const form of document.forms) {
+    show(form);
+    form.addEventListener('change', () => show(form));
+  }
+</script>
